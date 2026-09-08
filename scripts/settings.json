@@ -1,0 +1,22 @@
+{
+  "_について": "Yahoo!天気とウェザーニュースは公開APIがないため、ページを取得して読み取ります。使う前に必ず各社の利用規約をご確認ください。既定では両方とも enabled を false にしてあります。",
+  "label": "栃木県宇都宮市",
+  "_outputs": "書き出し先。リポジトリの一番上からの相対パスで書きます。",
+  "outputs": [
+    "docs/data/latest.json"
+  ],
+  "sources": {
+    "yahoo": {
+      "enabled": false,
+      "_url": "Yahoo!天気で自分の地域のページを開き、そのURLをそのまま貼ってください",
+      "url": "https://weather.yahoo.co.jp/weather/jp/9/4110/9201.html",
+      "label": "栃木県宇都宮市"
+    },
+    "weathernews": {
+      "enabled": false,
+      "_url": "ウェザーニュースで自分の地域のページを開き、そのURLをそのまま貼ってください",
+      "url": "https://weathernews.jp/onebox/tenki/tochigi/09201/",
+      "label": "栃木県宇都宮市"
+    }
+  }
+}

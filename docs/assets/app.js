@@ -1,0 +1,1164 @@
+/* =========================================================
+   気温・湿度・絶対湿度アプリ
+   ---------------------------------------------------------
+   ・気象庁のアメダス実況／府県天気予報を直接読みます
+   ・湿度の「予報」は気象庁の公開予報には含まれないため、
+     気象庁の数値予報モデル（MSM/GSM）を配信している Open-Meteo を使います
+   ・Yahoo!天気とウェザーニュースは公開APIがなくブラウザから直接読めないため、
+     scripts/weather/collect.py が書き出した data/latest.json を読みます
+   ========================================================= */
+'use strict';
+
+/* ---------------------------------------------------------
+   定数
+   --------------------------------------------------------- */
+var JMA = 'https://www.jma.go.jp/bosai';
+var OPEN_METEO = 'https://api.open-meteo.com/v1/forecast';
+var SNAPSHOT = './data/latest.json';
+
+var DEFAULT_PLACE = { lat: 36.5551, lon: 139.8828, label: '栃木県宇都宮市' };
+var STORE_KEY = 'dc-weather-place';
+var AUTO_RELOAD_MS = 10 * 60 * 1000;
+
+/* 提供元の表示名と色（CSS変数と合わせています） */
+var SOURCES = {
+  jma:         { name: '気象庁（アメダス実況）', short: '気象庁 実況', color: '#E0A24B' },
+  model:       { name: '気象庁MSM/GSM（Open-Meteo）', short: 'MSM/GSM', color: '#3F7FB5' },
+  yahoo:       { name: 'Yahoo!天気', short: 'Yahoo!天気', color: '#C0392B' },
+  weathernews: { name: 'ウェザーニュース', short: 'ウェザー\u30cb\u30e5\u30fc\u30b9', color: '#2F7D5B' }
+};
+
+/* グラフには出さないが取得状況に出す項目の表示名 */
+var STATUS_NAMES = {
+  jma_forecast: '気象庁（府県天気予報）',
+  snapshot: 'Yahoo!天気・ウェザーニュース（取り込みファイル）'
+};
+
+/* 予報区のおおよその中心。緯度・経度から自動で選ぶために使います。
+   コードは area.json の名前照合で上書きされるので、ここは控えの値です。 */
+var OFFICES = [
+  ['宗谷地方','011000',45.20,142.10],['上川・留萌地方','012000',44.00,142.20],
+  ['網走・北見・紋別地方','013000',43.90,143.90],['釧路・根室地方','014100',43.30,144.80],
+  ['十勝地方','014030',42.92,143.20],['胆振・日高地方','015000',42.60,142.20],
+  ['石狩・空知・後志地方','016000',43.15,141.45],['渡島・檜山地方','017000',41.90,140.50],
+  ['青森県','020000',40.75,140.80],['岩手県','030000',39.60,141.30],['宮城県','040000',38.40,140.90],
+  ['秋田県','050000',39.80,140.40],['山形県','060000',38.40,140.20],['福島県','070000',37.40,140.30],
+  ['茨城県','080000',36.30,140.30],['栃木県','090000',36.70,139.85],['群馬県','100000',36.50,138.95],
+  ['埼玉県','110000',36.00,139.40],['千葉県','120000',35.50,140.20],['東京都','130000',35.69,139.69],
+  ['神奈川県','140000',35.40,139.35],['新潟県','150000',37.50,138.90],['富山県','160000',36.70,137.20],
+  ['石川県','170000',36.70,136.80],['福井県','180000',35.90,136.30],['山梨県','190000',35.60,138.60],
+  ['長野県','200000',36.20,138.10],['岐阜県','210000',35.80,137.00],['静岡県','220000',34.95,138.40],
+  ['愛知県','230000',35.10,137.10],['三重県','240000',34.60,136.40],['滋賀県','250000',35.20,136.15],
+  ['京都府','260000',35.20,135.50],['大阪府','270000',34.65,135.50],['兵庫県','280000',35.00,134.90],
+  ['奈良県','290000',34.40,135.90],['和歌山県','300000',33.90,135.50],['鳥取県','310000',35.40,133.90],
+  ['島根県','320000',35.05,132.60],['岡山県','330000',34.85,133.80],['広島県','340000',34.60,132.80],
+  ['山口県','350000',34.20,131.50],['徳島県','360000',33.90,134.30],['香川県','370000',34.20,134.00],
+  ['愛媛県','380000',33.75,132.90],['高知県','390000',33.50,133.40],['福岡県','400000',33.60,130.60],
+  ['佐賀県','410000',33.30,130.10],['長崎県','420000',33.00,129.70],['熊本県','430000',32.70,130.80],
+  ['大分県','440000',33.20,131.50],['宮崎県','450000',32.20,131.30],['鹿児島県','460100',31.70,130.60],
+  ['奄美地方','460040',28.40,129.50],['沖縄本島地方','471000',26.50,127.90],
+  ['大東島地方','472000',25.83,131.23],['宮古島地方','473000',24.80,125.30],
+  ['八重山地方','474000',24.40,124.20]
+];
+
+/* 気象庁の天気コード（週間予報は文言がなくコードだけなので使います） */
+var TELOP = {
+  '100':'晴れ','101':'晴れ時々くもり','102':'晴れ一時雨','103':'晴れ時々雨','104':'晴れ一時雪',
+  '105':'晴れ時々雪','106':'晴れ一時雨か雪','107':'晴れ時々雨か雪','108':'晴れ一時雨か雷雨',
+  '110':'晴れ後時々くもり','111':'晴れ後くもり','112':'晴れ後一時雨','113':'晴れ後時々雨','114':'晴れ後雨',
+  '115':'晴れ後一時雪','116':'晴れ後時々雪','117':'晴れ後雪','118':'晴れ後雨か雪','119':'晴れ後雨か雷雨',
+  '120':'晴れ朝夕一時雨','121':'晴れ朝の内一時雨','122':'晴れ夕方一時雨','123':'晴れ山沿い雷雨',
+  '124':'晴れ山沿い雪','125':'晴れ午後は雷雨','126':'晴れ昼頃から雨','127':'晴れ夕方から雨',
+  '128':'晴れ夜は雨','130':'朝の内霧後晴れ','131':'晴れ朝方霧','132':'晴れ朝夕くもり',
+  '140':'晴れ時々雨で雷を伴う','160':'晴れ一時雪か雨','170':'晴れ時々雪か雨','181':'晴れ後雪か雨',
+  '200':'くもり','201':'くもり時々晴れ','202':'くもり一時雨','203':'くもり時々雨','204':'くもり一時雪',
+  '205':'くもり時々雪','206':'くもり一時雨か雪','207':'くもり時々雨か雪','208':'くもり一時雨か雷雨',
+  '209':'霧','210':'くもり後時々晴れ','211':'くもり後晴れ','212':'くもり後一時雨','213':'くもり後時々雨',
+  '214':'くもり後雨','215':'くもり後一時雪','216':'くもり後時々雪','217':'くもり後雪','218':'くもり後雨か雪',
+  '219':'くもり後雨か雷雨','220':'くもり朝夕一時雨','221':'くもり朝の内一時雨','222':'くもり夕方一時雨',
+  '223':'くもり日中時々晴れ','224':'くもり昼頃から雨','225':'くもり夕方から雨','226':'くもり夜は雨',
+  '228':'くもり昼頃から雪','229':'くもり夕方から雪','230':'くもり夜は雪','231':'くもり海上海岸は霧か霧雨',
+  '240':'くもり時々雨で雷を伴う','250':'くもり時々雪で雷を伴う','260':'くもり一時雪か雨',
+  '270':'くもり時々雪か雨','281':'くもり後雪か雨',
+  '300':'雨','301':'雨時々晴れ','302':'雨時々止む','303':'雨時々雪','304':'雨か雪','306':'大雨',
+  '308':'雨で暴風を伴う','309':'雨一時雪','311':'雨後晴れ','313':'雨後くもり','314':'雨後時々雪',
+  '315':'雨後雪','316':'雨か雪後晴れ','317':'雨か雪後くもり','320':'朝の内雨後晴れ','321':'朝の内雨後くもり',
+  '322':'雨朝晩一時雪','323':'雨昼頃から晴れ','324':'雨夕方から晴れ','325':'雨夜は晴れ','326':'雨夕方から雪',
+  '327':'雨夜は雪','328':'雨一時強く降る','329':'雨一時みぞれ','340':'雪か雨','350':'雨で雷を伴う',
+  '361':'雪か雨後晴れ','371':'雪か雨後くもり',
+  '400':'雪','401':'雪時々晴れ','402':'雪時々止む','403':'雪時々雨','405':'大雪','406':'風雪強い',
+  '407':'暴風雪','409':'雪一時雨','411':'雪後晴れ','413':'雪後くもり','414':'雪後雨','420':'朝の内雪後晴れ',
+  '421':'朝の内雪後くもり','422':'雪昼頃から雨','423':'雪夕方から雨','425':'雪一時強く降る',
+  '426':'雪後みぞれ','427':'雪一時みぞれ','450':'雪で雷を伴う'
+};
+
+/* ---------------------------------------------------------
+   湿り空気の計算
+   --------------------------------------------------------- */
+
+/* 飽和水蒸気圧 [hPa]（Tetensの式・水面上） */
+function saturationVaporPressure(t) {
+  return 6.1078 * Math.pow(10, (7.5 * t) / (t + 237.3));
+}
+
+/* 水蒸気圧 [hPa] */
+function vaporPressure(t, rh) {
+  return saturationVaporPressure(t) * (rh / 100);
+}
+
+/* 容積絶対湿度 [g/m3]　空気1立方メートルに含まれる水蒸気の重さ */
+function volumetricHumidity(t, rh) {
+  return (216.68 * vaporPressure(t, rh)) / (t + 273.15);
+}
+
+/* 重量絶対湿度 [g/kg(DA)]　乾き空気1kgあたりの水蒸気の重さ */
+function mixingRatio(t, rh, pressure) {
+  var p = pressure || 1013.25;
+  var e = vaporPressure(t, rh);
+  if (p - e <= 0) { return NaN; }
+  return (621.945 * e) / (p - e);
+}
+
+/* 露点温度 [℃]（Magnusの式） */
+function dewPoint(t, rh) {
+  var a = 17.625, b = 243.04;
+  var r = Math.min(Math.max(rh, 0.1), 100);
+  var g = Math.log(r / 100) + (a * t) / (b + t);
+  return (b * g) / (a - g);
+}
+
+/* 不快指数 */
+function discomfortIndex(t, rh) {
+  return 0.81 * t + 0.01 * rh * (0.99 * t - 14.3) + 46.3;
+}
+
+/* 標高から気圧を推定 [hPa]（観測値がないときの控え） */
+function pressureFromAltitude(alt, t) {
+  var temp = (typeof t === 'number' && isFinite(t)) ? t : 15;
+  return 1013.25 * Math.pow(1 - (0.0065 * (alt || 0)) / (temp + 273.15 + 0.0065 * (alt || 0)), 5.257);
+}
+
+/* 気温・湿度から表示用の値をまとめて作る */
+function derive(t, rh, pressure) {
+  if (!isNum(t) || !isNum(rh)) { return null; }
+  return {
+    temp: t,
+    rh: rh,
+    vh: volumetricHumidity(t, rh),
+    mr: mixingRatio(t, rh, pressure),
+    dp: dewPoint(t, rh),
+    di: discomfortIndex(t, rh),
+    pressure: pressure || null
+  };
+}
+
+/* ---------------------------------------------------------
+   小さな道具
+   --------------------------------------------------------- */
+function $(id) { return document.getElementById(id); }
+function isNum(v) { return typeof v === 'number' && isFinite(v); }
+function fix(v, n) { return isNum(v) ? v.toFixed(n === undefined ? 1 : n) : '--'; }
+function pad2(n) { return (n < 10 ? '0' : '') + n; }
+
+function el(tag, cls, text) {
+  var e = document.createElement(tag);
+  if (cls) { e.className = cls; }
+  if (text !== undefined && text !== null) { e.textContent = text; }
+  return e;
+}
+
+function getJSON(url, opt) {
+  var o = opt || {};
+  var ctl = ('AbortController' in window) ? new AbortController() : null;
+  var timer = ctl ? setTimeout(function () { ctl.abort(); }, o.timeout || 12000) : null;
+  return fetch(url, { cache: 'no-store', signal: ctl ? ctl.signal : undefined })
+    .then(function (r) {
+      if (!r.ok) { throw new Error('HTTP ' + r.status); }
+      return o.text ? r.text() : r.json();
+    })
+    .then(function (v) { if (timer) { clearTimeout(timer); } return v; })
+    .catch(function (e) { if (timer) { clearTimeout(timer); } throw e; });
+}
+
+/* 2地点の距離 [km] */
+function distanceKm(lat1, lon1, lat2, lon2) {
+  var R = 6371;
+  var dLat = (lat2 - lat1) * Math.PI / 180;
+  var dLon = (lon2 - lon1) * Math.PI / 180;
+  var a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+    Math.sin(dLon / 2) * Math.sin(dLon / 2);
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+/* アメダス表の [度, 分] を度に直す */
+function dm2deg(dm) {
+  if (!dm || dm.length < 2) { return NaN; }
+  return dm[0] + dm[1] / 60;
+}
+
+/* アメダスの値は [値, 品質情報] の形で入っています */
+function amedasValue(row, key) {
+  if (!row || !row[key] || !Array.isArray(row[key])) { return NaN; }
+  var v = row[key][0];
+  return (typeof v === 'number' && isFinite(v)) ? v : NaN;
+}
+
+/* 気象庁の 20260908141000 形式を Date に */
+function parseJmaStamp(s) {
+  var m = String(s).match(/^(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})/);
+  if (!m) { return null; }
+  return new Date(m[1] + '-' + m[2] + '-' + m[3] + 'T' + m[4] + ':' + m[5] + ':00+09:00');
+}
+
+/* 日本時間での表示 */
+function fmtTime(d) {
+  if (!d) { return '--'; }
+  return new Intl.DateTimeFormat('ja-JP', {
+    hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Tokyo'
+  }).format(d);
+}
+function fmtDateTime(d) {
+  if (!d) { return '--'; }
+  return new Intl.DateTimeFormat('ja-JP', {
+    month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Tokyo'
+  }).format(d);
+}
+function fmtDate(d) {
+  if (!d) { return '--'; }
+  return new Intl.DateTimeFormat('ja-JP', {
+    month: 'numeric', day: 'numeric', weekday: 'short', timeZone: 'Asia/Tokyo'
+  }).format(d);
+}
+
+var WIND_DIR = ['北','北北東','北東','東北東','東','東南東','南東','南南東','南','南南西','南西','西南西','西','西北西','北西','北北西'];
+function windText(row) {
+  var spd = amedasValue(row, 'wind');
+  var dir = amedasValue(row, 'windDirection');
+  if (!isNum(spd)) { return '--'; }
+  var d = isNum(dir) && dir >= 1 && dir <= 16 ? WIND_DIR[dir - 1] : (dir === 0 ? '静穏' : '');
+  return (d ? d + ' ' : '') + spd.toFixed(1) + ' m/s';
+}
+
+/* ---------------------------------------------------------
+   状態
+   --------------------------------------------------------- */
+var state = {
+  place: null,          /* {lat, lon, label, office} */
+  offices: null,        /* area.json の予報区一覧 {code: name} */
+  station: null,        /* 最寄りのアメダス観測所 */
+  now: {},              /* 提供元ごとの現在値 */
+  past: [],             /* アメダスの10分値（過去24時間） */
+  future: {},           /* 提供元ごとの時間別予報 */
+  daily: [],            /* 気象庁の日別予報 */
+  overview: '',
+  officeName: '',
+  status: [],
+  chartMode: 'past',
+  surface: 10
+};
+
+var cache = { amedasTable: null };
+
+function setStatus(key, ok, msg) {
+  var name = (SOURCES[key] && SOURCES[key].name) || STATUS_NAMES[key] || key;
+  for (var i = 0; i < state.status.length; i++) {
+    if (state.status[i].key === key) {
+      state.status[i].ok = ok;
+      state.status[i].msg = msg;
+      return;
+    }
+  }
+  state.status.push({ key: key, name: name, ok: ok, msg: msg });
+}
+
+/* ---------------------------------------------------------
+   気象庁：アメダス実況
+   --------------------------------------------------------- */
+function loadAmedasTable() {
+  if (cache.amedasTable) { return Promise.resolve(cache.amedasTable); }
+  return getJSON(JMA + '/amedas/const/amedastable.json').then(function (t) {
+    cache.amedasTable = t;
+    return t;
+  });
+}
+
+/* 緯度・経度に近い順に観測所を並べる */
+function nearestStations(table, lat, lon, limit) {
+  var list = [];
+  for (var code in table) {
+    if (!Object.prototype.hasOwnProperty.call(table, code)) { continue; }
+    var s = table[code];
+    var sLat = dm2deg(s.lat), sLon = dm2deg(s.lon);
+    if (!isNum(sLat) || !isNum(sLon)) { continue; }
+    list.push({
+      code: code,
+      name: s.kjName || code,
+      lat: sLat,
+      lon: sLon,
+      alt: isNum(s.alt) ? s.alt : 0,
+      km: distanceKm(lat, lon, sLat, sLon)
+    });
+  }
+  list.sort(function (a, b) { return a.km - b.km; });
+  return list.slice(0, limit || 80);
+}
+
+function loadAmedas(place) {
+  var near, obsTime;
+  return loadAmedasTable()
+    .then(function (table) {
+      near = nearestStations(table, place.lat, place.lon, 120);
+      return getJSON(JMA + '/amedas/data/latest_time.txt', { text: true });
+    })
+    .then(function (txt) {
+      obsTime = new Date(String(txt).trim());
+      if (isNaN(obsTime.getTime())) { throw new Error('観測時刻を読めませんでした'); }
+      /* ファイル名は日本時間の YYYYMMDDHHMM00 */
+      var jst = new Date(obsTime.getTime() + 9 * 3600 * 1000);
+      var stamp = jst.getUTCFullYear() + pad2(jst.getUTCMonth() + 1) + pad2(jst.getUTCDate()) +
+        pad2(jst.getUTCHours()) + pad2(jst.getUTCMinutes()) + '00';
+      return getJSON(JMA + '/amedas/data/map/' + stamp + '.json');
+    })
+    .then(function (map) {
+      /* 気温と湿度がそろっている一番近い観測所を選びます */
+      var withBoth = null, withTemp = null;
+      for (var i = 0; i < near.length; i++) {
+        var row = map[near[i].code];
+        if (!row) { continue; }
+        var t = amedasValue(row, 'temp');
+        var h = amedasValue(row, 'humidity');
+        if (!withTemp && isNum(t)) { withTemp = { st: near[i], row: row }; }
+        if (isNum(t) && isNum(h)) { withBoth = { st: near[i], row: row }; break; }
+      }
+      var hit = withBoth || withTemp;
+      if (!hit) { throw new Error('近くに観測値のある地点がありませんでした'); }
+
+      var t = amedasValue(hit.row, 'temp');
+      var h = amedasValue(hit.row, 'humidity');
+      var p = amedasValue(hit.row, 'pressure');
+      if (!isNum(p)) { p = pressureFromAltitude(hit.st.alt, t); }
+
+      state.station = hit.st;
+      state.now.jma = {
+        time: obsTime,
+        values: derive(t, h, p),
+        row: hit.row,
+        station: hit.st,
+        hasHumidity: isNum(h)
+      };
+      setStatus('jma', true,
+        hit.st.name + 'アメダス（約' + hit.st.km.toFixed(1) + 'km）／' + fmtDateTime(obsTime) + ' 現在' +
+        (isNum(h) ? '' : '　※この地点は湿度を観測していません'));
+      return { station: hit.st, obsTime: obsTime };
+    })
+    .catch(function (e) {
+      setStatus('jma', false, '取得できませんでした（' + e.message + '）');
+      throw e;
+    });
+}
+
+/* 過去24時間の10分値。3時間ごとのファイルを8個つなぎます */
+function loadAmedasPast(stationCode, obsTime) {
+  var jst = new Date(obsTime.getTime() + 9 * 3600 * 1000);
+  var blockHour = Math.floor(jst.getUTCHours() / 3) * 3;
+  var base = Date.UTC(jst.getUTCFullYear(), jst.getUTCMonth(), jst.getUTCDate(), blockHour);
+  var jobs = [];
+  for (var i = 7; i >= 0; i--) {
+    var b = new Date(base - i * 3 * 3600 * 1000);
+    var name = b.getUTCFullYear() + pad2(b.getUTCMonth() + 1) + pad2(b.getUTCDate()) + '_' + pad2(b.getUTCHours());
+    jobs.push(
+      getJSON(JMA + '/amedas/data/point/' + stationCode + '/' + name + '.json')
+        .catch(function () { return null; })
+    );
+  }
+  return Promise.all(jobs).then(function (blocks) {
+    var rows = [];
+    blocks.forEach(function (blk) {
+      if (!blk) { return; }
+      Object.keys(blk).sort().forEach(function (stamp) {
+        var d = parseJmaStamp(stamp);
+        if (!d) { return; }
+        var t = amedasValue(blk[stamp], 'temp');
+        var h = amedasValue(blk[stamp], 'humidity');
+        var p = amedasValue(blk[stamp], 'pressure');
+        if (!isNum(t) || !isNum(h)) { return; }
+        rows.push({
+          time: d,
+          temp: t,
+          rh: h,
+          vh: volumetricHumidity(t, h),
+          mr: mixingRatio(t, h, isNum(p) ? p : undefined)
+        });
+      });
+    });
+    rows.sort(function (a, b) { return a.time - b.time; });
+    state.past = rows;
+    return rows;
+  });
+}
+
+/* ---------------------------------------------------------
+   気象庁：府県天気予報
+   --------------------------------------------------------- */
+function loadAreas() {
+  if (state.offices) { return Promise.resolve(state.offices); }
+  return getJSON(JMA + '/common/const/area.json').then(function (a) {
+    var out = {};
+    var src = a && a.offices ? a.offices : {};
+    for (var code in src) {
+      if (Object.prototype.hasOwnProperty.call(src, code)) { out[code] = src[code].name || code; }
+    }
+    state.offices = out;
+    return out;
+  }).catch(function () { return null; });
+}
+
+/* 緯度・経度から予報区を選ぶ（手動指定があればそれを優先） */
+function resolveOffice(place) {
+  if (place.office) { return place.office; }
+  var best = null;
+  for (var i = 0; i < OFFICES.length; i++) {
+    var d = distanceKm(place.lat, place.lon, OFFICES[i][2], OFFICES[i][3]);
+    if (!best || d < best.km) { best = { km: d, name: OFFICES[i][0], code: OFFICES[i][1] }; }
+  }
+  if (state.offices) {
+    for (var code in state.offices) {
+      if (state.offices[code] === best.name) { return code; }
+    }
+  }
+  return best.code;
+}
+
+/* 気温予報地点のうち、いまの地点に一番近いものを選ぶ */
+function pickTempArea(areas, place) {
+  if (!cache.amedasTable || !areas || !areas.length) { return 0; }
+  var bi = 0, bd = Infinity;
+  for (var i = 0; i < areas.length; i++) {
+    var s = cache.amedasTable[areas[i].area.code];
+    if (!s) { continue; }
+    var d = distanceKm(place.lat, place.lon, dm2deg(s.lat), dm2deg(s.lon));
+    if (d < bd) { bd = d; bi = i; }
+  }
+  return bi;
+}
+
+function loadForecast(place) {
+  var office = resolveOffice(place);
+  state.officeName = (state.offices && state.offices[office]) || office;
+
+  return Promise.all([
+    getJSON(JMA + '/forecast/data/forecast/' + office + '.json'),
+    getJSON(JMA + '/forecast/data/overview_forecast/' + office + '.json').catch(function () { return null; })
+  ]).then(function (res) {
+    var data = res[0], ov = res[1];
+    var days = {};
+
+    function slot(iso) {
+      var d = new Date(iso);
+      var jst = new Date(d.getTime() + 9 * 3600 * 1000);
+      var key = jst.getUTCFullYear() + '-' + pad2(jst.getUTCMonth() + 1) + '-' + pad2(jst.getUTCDate());
+      if (!days[key]) { days[key] = { key: key, date: d, weather: '', code: '', pop: null, min: null, max: null }; }
+      return days[key];
+    }
+
+    /* 直近3日 */
+    var near = data[0];
+    if (near && near.timeSeries) {
+      var ts0 = near.timeSeries[0];
+      if (ts0) {
+        var a0 = ts0.areas[0];
+        ts0.timeDefines.forEach(function (iso, i) {
+          var s = slot(iso);
+          if (a0.weathers && a0.weathers[i]) { s.weather = String(a0.weathers[i]).replace(/[　\s]+/g, ''); }
+          if (a0.weatherCodes && a0.weatherCodes[i]) { s.code = a0.weatherCodes[i]; }
+        });
+      }
+      var ts1 = near.timeSeries[1];
+      if (ts1) {
+        var a1 = ts1.areas[0];
+        ts1.timeDefines.forEach(function (iso, i) {
+          var v = a1.pops && a1.pops[i];
+          if (v === '' || v === undefined || v === null) { return; }
+          var s = slot(iso);
+          s.pop = Math.max(s.pop === null ? -1 : s.pop, Number(v));
+        });
+      }
+      var ts2 = near.timeSeries[2];
+      if (ts2 && ts2.areas && ts2.areas.length) {
+        var ai = pickTempArea(ts2.areas, place);
+        var a2 = ts2.areas[ai];
+        ts2.timeDefines.forEach(function (iso, i) {
+          var v = a2.temps && a2.temps[i];
+          if (v === '' || v === undefined || v === null) { return; }
+          var s = slot(iso);
+          var jst = new Date(new Date(iso).getTime() + 9 * 3600 * 1000);
+          /* 気象庁は 00時を最低気温、09時を最高気温として出しています */
+          if (jst.getUTCHours() < 6) {
+            if (s.min === null) { s.min = Number(v); }
+          } else if (s.max === null) { s.max = Number(v); }
+        });
+      }
+    }
+
+    /* 週間 */
+    var week = data[1];
+    if (week && week.timeSeries) {
+      var w0 = week.timeSeries[0];
+      if (w0) {
+        var b0 = w0.areas[0];
+        w0.timeDefines.forEach(function (iso, i) {
+          var s = slot(iso);
+          if (!s.code && b0.weatherCodes && b0.weatherCodes[i]) { s.code = b0.weatherCodes[i]; }
+          var p = b0.pops && b0.pops[i];
+          if (s.pop === null && p !== '' && p !== undefined && p !== null) { s.pop = Number(p); }
+        });
+      }
+      var w1 = week.timeSeries[1];
+      if (w1) {
+        var b1 = w1.areas[0];
+        w1.timeDefines.forEach(function (iso, i) {
+          var s = slot(iso);
+          var mn = b1.tempsMin && b1.tempsMin[i];
+          var mx = b1.tempsMax && b1.tempsMax[i];
+          if (s.min === null && mn !== '' && mn !== undefined && mn !== null) { s.min = Number(mn); }
+          if (s.max === null && mx !== '' && mx !== undefined && mx !== null) { s.max = Number(mx); }
+        });
+      }
+    }
+
+    state.daily = Object.keys(days).sort().map(function (k) {
+      var d = days[k];
+      if (!d.weather && d.code) { d.weather = TELOP[d.code] || ''; }
+      return d;
+    });
+    state.overview = ov && ov.text ? String(ov.text).trim() : '';
+    setStatus('jma_forecast', true, state.officeName + '（' + office + '）の予報を読み込みました');
+    return state.daily;
+  }).catch(function (e) {
+    setStatus('jma_forecast', false, '予報を取得できませんでした（' + e.message + '）');
+  });
+}
+
+/* ---------------------------------------------------------
+   気象庁の数値予報（MSM/GSM）を Open-Meteo 経由で
+   ---------------------------------------------------------
+   気象庁が公開している府県天気予報には湿度が入っていないため、
+   絶対湿度の「予報」を出すには数値予報モデルの値が要ります。
+   Open-Meteo は気象庁のMSM/GSMを配信していて、APIキーなしで使えます。
+   --------------------------------------------------------- */
+function loadModel(place) {
+  function url(withModel) {
+    var q = '?latitude=' + place.lat.toFixed(4) +
+      '&longitude=' + place.lon.toFixed(4) +
+      '&hourly=temperature_2m,relative_humidity_2m,surface_pressure' +
+      '&current=temperature_2m,relative_humidity_2m,surface_pressure' +
+      '&timezone=Asia%2FTokyo&forecast_days=7&past_days=1';
+    return OPEN_METEO + q + (withModel ? '&models=jma_seamless' : '');
+  }
+
+  return getJSON(url(true))
+    .catch(function () { return getJSON(url(false)); })
+    .then(function (d) {
+      var h = d && d.hourly;
+      var rows = [];
+      if (h && h.time) {
+        for (var i = 0; i < h.time.length; i++) {
+          var t = h.temperature_2m ? h.temperature_2m[i] : null;
+          var rh = h.relative_humidity_2m ? h.relative_humidity_2m[i] : null;
+          var p = h.surface_pressure ? h.surface_pressure[i] : null;
+          if (!isNum(t) || !isNum(rh)) { continue; }
+          rows.push({
+            time: new Date(h.time[i] + ':00+09:00'),
+            temp: t,
+            rh: rh,
+            vh: volumetricHumidity(t, rh),
+            mr: mixingRatio(t, rh, isNum(p) ? p : undefined)
+          });
+        }
+      }
+      state.future.model = rows;
+
+      var c = d && d.current;
+      if (c && isNum(c.temperature_2m) && isNum(c.relative_humidity_2m)) {
+        state.now.model = {
+          time: c.time ? new Date(c.time + ':00+09:00') : new Date(),
+          values: derive(c.temperature_2m, c.relative_humidity_2m,
+            isNum(c.surface_pressure) ? c.surface_pressure : undefined)
+        };
+      }
+      setStatus('model', true, rows.length + '時間ぶんの予報を読み込みました');
+      return rows;
+    })
+    .catch(function (e) {
+      setStatus('model', false, '取得できませんでした（' + e.message + '）');
+    });
+}
+
+/* ---------------------------------------------------------
+   Yahoo!天気・ウェザーニュース（取り込みファイル）
+   ---------------------------------------------------------
+   どちらも公開APIがなく、ブラウザから直接は読めません（CORS）。
+   scripts/weather/collect.py がサーバ側で取得して書き出した
+   data/latest.json をここで読みます。ファイルがなければ「未取得」と出します。
+   --------------------------------------------------------- */
+function loadSnapshot() {
+  return getJSON(SNAPSHOT, { timeout: 6000 })
+    .then(function (snap) {
+      var src = (snap && snap.sources) || {};
+      var got = [];
+      ['yahoo', 'weathernews'].forEach(function (key) {
+        var s = src[key];
+        if (!s) { setStatus(key, null, '取り込みファイルに入っていません'); return; }
+        if (!s.ok) { setStatus(key, false, s.error || '取得に失敗しています'); return; }
+
+        if (s.current && isNum(s.current.temp) && isNum(s.current.humidity)) {
+          state.now[key] = {
+            time: s.current.time ? new Date(s.current.time) : null,
+            values: derive(s.current.temp, s.current.humidity, s.current.pressure)
+          };
+        }
+        var rows = [];
+        (s.hourly || []).forEach(function (r) {
+          if (!isNum(r.temp) || !isNum(r.humidity)) { return; }
+          rows.push({
+            time: new Date(r.time),
+            temp: r.temp,
+            rh: r.humidity,
+            vh: volumetricHumidity(r.temp, r.humidity),
+            mr: mixingRatio(r.temp, r.humidity, r.pressure)
+          });
+        });
+        rows.sort(function (a, b) { return a.time - b.time; });
+        if (rows.length) { state.future[key] = rows; }
+        got.push(SOURCES[key].name);
+        setStatus(key, true, (s.label ? s.label + '／' : '') +
+          (rows.length ? rows.length + '時間ぶんの予報' : '現在値のみ') +
+          (snap.generated_at ? '（取得 ' + fmtDateTime(new Date(snap.generated_at)) + '）' : ''));
+      });
+      setStatus('snapshot', got.length > 0, got.length
+        ? got.join('・') + ' を読み込みました'
+        : 'data/latest.json はありますが中身が空です');
+    })
+    .catch(function () {
+      setStatus('yahoo', null, '未取得（サーバ側での取り込みが必要です）');
+      setStatus('weathernews', null, '未取得（サーバ側での取り込みが必要です）');
+      setStatus('snapshot', null,
+        'data/latest.json がありません。scripts/weather/collect.py を動かすと取り込めます');
+    });
+}
+
+/* ---------------------------------------------------------
+   表示
+   --------------------------------------------------------- */
+
+/* 見出しに使う値。気象庁の実況を優先し、湿度がなければ数値予報で補います */
+function primaryNow() {
+  var j = state.now.jma;
+  if (j && j.values && isNum(j.values.rh)) { return { key: 'jma', data: j }; }
+  var m = state.now.model;
+  if (m && m.values) { return { key: 'model', data: m }; }
+  if (j && j.values) { return { key: 'jma', data: j }; }
+  return null;
+}
+
+function renderPlace() {
+  var p = state.place;
+  var label = p.label;
+  if (!label) {
+    label = state.station ? state.station.name + ' 付近' : '現在地';
+  }
+  $('place-name').textContent = label;
+  var sub = p.lat.toFixed(4) + ', ' + p.lon.toFixed(4);
+  if (state.station) {
+    sub += '　最寄り観測所：' + state.station.name + '（' + state.station.km.toFixed(1) + 'km・標高' + state.station.alt + 'm）';
+  }
+  $('place-sub').textContent = sub;
+  $('in-lat').value = p.lat.toFixed(4);
+  $('in-lon').value = p.lon.toFixed(4);
+}
+
+function renderNow() {
+  var pri = primaryNow();
+  if (!pri) {
+    $('now-meta').textContent = '値を取得できませんでした';
+    return;
+  }
+  var v = pri.data.values;
+  $('v-temp').textContent = fix(v.temp, 1);
+  $('v-rh').textContent = fix(v.rh, 0);
+  $('v-vh').textContent = fix(v.vh, 1);
+  $('v-mr').innerHTML = fix(v.mr, 1) + '<span>g/kg(DA)</span>';
+  $('v-dp').innerHTML = fix(v.dp, 1) + '<span>℃</span>';
+  $('v-pres').innerHTML = fix(v.pressure, 1) + '<span>hPa</span>';
+  $('v-di').textContent = fix(v.di, 1);
+
+  var row = state.now.jma && state.now.jma.row;
+  $('v-wind').textContent = row ? windText(row) : '--';
+  var prec = row ? amedasValue(row, 'precipitation1h') : NaN;
+  $('v-prec').innerHTML = (isNum(prec) ? prec.toFixed(1) : '--') + '<span>mm</span>';
+
+  $('now-meta').textContent = SOURCES[pri.key].name + '　' + fmtDateTime(pri.data.time);
+  renderDew();
+}
+
+function renderDew() {
+  var pri = primaryNow();
+  var box = $('dew-verdict');
+  $('surf-out').textContent = state.surface.toFixed(1);
+  if (!pri) { box.textContent = '—'; box.className = 'dewcheck__verdict'; return; }
+  var dp = pri.data.values.dp;
+  var margin = state.surface - dp;
+  box.className = 'dewcheck__verdict ' + (margin <= 0 ? 'is-ng' : 'is-ok');
+  if (margin <= 0) {
+    box.textContent = '結露します。露点 ' + fix(dp, 1) + '℃ に対して表面温度が ' +
+      fix(Math.abs(margin), 1) + '℃ 低い状態です。';
+  } else {
+    box.textContent = '結露しません。露点 ' + fix(dp, 1) + '℃ まであと ' + fix(margin, 1) + '℃ の余裕があります。';
+  }
+}
+
+function renderCompare() {
+  var body = $('cmp-body');
+  body.innerHTML = '';
+  var keys = ['jma', 'model', 'yahoo', 'weathernews'];
+  var any = false;
+
+  keys.forEach(function (k) {
+    var n = state.now[k];
+    var tr = el('tr');
+    var name = el('td');
+    var dot = el('span', 'dot');
+    dot.style.background = SOURCES[k].color;
+    name.appendChild(dot);
+    name.appendChild(document.createTextNode(SOURCES[k].short));
+    tr.appendChild(name);
+
+    if (!n || !n.values) {
+      var td = el('td', 'miss', '—');
+      td.colSpan = 5;
+      tr.appendChild(td);
+    } else {
+      any = true;
+      var v = n.values;
+      tr.appendChild(el('td', null, n.time ? fmtTime(n.time) : '--'));
+      tr.appendChild(el('td', null, fix(v.temp, 1)));
+      tr.appendChild(el('td', null, fix(v.rh, 0)));
+      tr.appendChild(el('td', null, fix(v.vh, 1)));
+      tr.appendChild(el('td', null, fix(v.dp, 1)));
+    }
+    body.appendChild(tr);
+  });
+
+  if (!any) {
+    body.innerHTML = '';
+    var e = el('tr');
+    var c = el('td', 'empty', 'まだ値を取得できていません。');
+    c.colSpan = 6;
+    e.appendChild(c);
+    body.appendChild(e);
+  }
+}
+
+/* ---------- グラフ ---------- */
+var SVGNS = 'http://www.w3.org/2000/svg';
+function svgEl(name, attrs) {
+  var e = document.createElementNS(SVGNS, name);
+  for (var k in attrs) {
+    if (Object.prototype.hasOwnProperty.call(attrs, k)) { e.setAttribute(k, attrs[k]); }
+  }
+  return e;
+}
+
+function niceTicks(min, max) {
+  if (!isNum(min) || !isNum(max)) { return [0, 1]; }
+  if (max - min < 0.5) { max = min + 0.5; }
+  var mid = (min + max) / 2;
+  return [max, mid, min];
+}
+
+function lineChart(title, unit, series, xMin, xMax, digits) {
+  var W = 720, H = 168, PL = 62, PR = 14, PT = 16, PB = 34;
+  var wrap = el('div', 'chart');
+  wrap.appendChild(el('p', 'chart__t', title + '（' + unit + '）'));
+
+  var min = Infinity, max = -Infinity;
+  series.forEach(function (s) {
+    s.points.forEach(function (p) {
+      if (p.v < min) { min = p.v; }
+      if (p.v > max) { max = p.v; }
+    });
+  });
+  if (!isFinite(min) || !isFinite(max)) {
+    wrap.appendChild(el('p', 'empty', 'データがありません'));
+    return wrap;
+  }
+  var pad = Math.max((max - min) * 0.12, 0.3);
+  min -= pad; max += pad;
+
+  var svg = svgEl('svg', { viewBox: '0 0 ' + W + ' ' + H, role: 'img', 'aria-label': title });
+  function x(t) { return PL + ((t - xMin) / (xMax - xMin)) * (W - PL - PR); }
+  function y(v) { return PT + (1 - (v - min) / (max - min)) * (H - PT - PB); }
+
+  /* 横の目盛り */
+  niceTicks(min + pad, max - pad).forEach(function (v) {
+    svg.appendChild(svgEl('line', { class: 'grid', x1: PL, x2: W - PR, y1: y(v), y2: y(v) }));
+    var tx = svgEl('text', { class: 'axis', x: PL - 10, y: y(v) + 6, 'text-anchor': 'end' });
+    tx.textContent = v.toFixed(digits);
+    svg.appendChild(tx);
+  });
+
+  /* 時刻の目盛り */
+  var stepH = (xMax - xMin) > 40 * 3600e3 ? 12 : ((xMax - xMin) > 20 * 3600e3 ? 6 : 3);
+  var cur = new Date(xMin);
+  var jst = new Date(cur.getTime() + 9 * 3600e3);
+  jst.setUTCMinutes(0, 0, 0);
+  while (jst.getUTCHours() % stepH !== 0) { jst.setTime(jst.getTime() + 3600e3); }
+  for (var t = jst.getTime() - 9 * 3600e3; t <= xMax; t += stepH * 3600e3) {
+    if (t < xMin) { continue; }
+    svg.appendChild(svgEl('line', { class: 'grid', x1: x(t), x2: x(t), y1: PT, y2: H - PB, opacity: '.5' }));
+    var lb = svgEl('text', { class: 'axis', x: x(t), y: H - 8, 'text-anchor': 'middle' });
+    lb.textContent = new Date(t + 9 * 3600e3).getUTCHours() + '時';
+    svg.appendChild(lb);
+  }
+
+  /* いまの時刻 */
+  var nowT = Date.now();
+  if (nowT > xMin && nowT < xMax) {
+    svg.appendChild(svgEl('line', { class: 'now-line', x1: x(nowT), x2: x(nowT), y1: PT, y2: H - PB }));
+  }
+
+  /* 折れ線 */
+  series.forEach(function (s) {
+    if (!s.points.length) { return; }
+    var d = s.points.map(function (p, i) {
+      return (i ? 'L' : 'M') + x(p.t).toFixed(1) + ' ' + y(p.v).toFixed(1);
+    }).join(' ');
+    svg.appendChild(svgEl('path', {
+      d: d, fill: 'none', stroke: s.color, 'stroke-width': 2,
+      'stroke-linejoin': 'round', 'stroke-linecap': 'round'
+    }));
+  });
+
+  wrap.appendChild(svg);
+  return wrap;
+}
+
+function chartSeries(mode) {
+  var out = [];
+  if (mode === 'past') {
+    if (state.past.length) {
+      out.push({ key: 'jma', color: SOURCES.jma.color, rows: state.past });
+    }
+  } else {
+    ['model', 'yahoo', 'weathernews'].forEach(function (k) {
+      if (state.future[k] && state.future[k].length) {
+        out.push({ key: k, color: SOURCES[k].color, rows: state.future[k] });
+      }
+    });
+  }
+  return out;
+}
+
+function renderChart() {
+  var box = $('charts');
+  var legend = $('legend');
+  box.innerHTML = '';
+  legend.innerHTML = '';
+
+  var mode = state.chartMode;
+  var groups = chartSeries(mode);
+  if (!groups.length) {
+    box.appendChild(el('p', 'empty', mode === 'past'
+      ? '実況の推移を取得できませんでした。'
+      : '予報の時系列を取得できませんでした。'));
+    return;
+  }
+
+  var now = Date.now();
+  var xMin, xMax;
+  if (mode === 'past') {
+    xMin = now - 24 * 3600e3;
+    xMax = now;
+  } else {
+    xMin = now - 3600e3;
+    xMax = now + 48 * 3600e3;
+  }
+
+  groups.forEach(function (g) {
+    var i = el('span', 'legend__i');
+    var s = el('span', 'legend__s');
+    s.style.background = g.color;
+    i.appendChild(s);
+    i.appendChild(document.createTextNode(SOURCES[g.key].name));
+    legend.appendChild(i);
+  });
+
+  [
+    { title: '気温', unit: '℃', key: 'temp', digits: 1 },
+    { title: '相対湿度', unit: '%', key: 'rh', digits: 0 },
+    { title: '絶対湿度', unit: 'g/m³', key: 'vh', digits: 1 }
+  ].forEach(function (c) {
+    var series = groups.map(function (g) {
+      return {
+        color: g.color,
+        points: g.rows.filter(function (r) {
+          var t = r.time.getTime();
+          return t >= xMin && t <= xMax && isNum(r[c.key]);
+        }).map(function (r) { return { t: r.time.getTime(), v: r[c.key] }; })
+      };
+    }).filter(function (s) { return s.points.length > 1; });
+
+    if (series.length) {
+      box.appendChild(lineChart(c.title, c.unit, series, xMin, xMax, c.digits));
+    }
+  });
+
+  if (!box.childNodes.length) {
+    box.appendChild(el('p', 'empty', 'この期間に描けるデータがありませんでした。'));
+  }
+}
+
+function renderDaily() {
+  var body = $('daily-body');
+  body.innerHTML = '';
+  $('fc-office').textContent = state.officeName
+    ? state.officeName + 'の予報です。'
+    : '予報区を特定できませんでした。';
+  $('fc-overview').textContent = state.overview || '—';
+
+  if (!state.daily.length) {
+    var tr = el('tr');
+    tr.appendChild(el('td', 'empty', '予報を取得できませんでした。'));
+    body.appendChild(tr);
+    return;
+  }
+
+  state.daily.forEach(function (d) {
+    var tr = el('tr');
+    tr.appendChild(el('td', 'd-date', fmtDate(d.date)));
+    tr.appendChild(el('td', 'd-w', d.weather || (TELOP[d.code] || '—')));
+
+    var t = el('td', 'd-t');
+    if (isNum(d.max)) {
+      var hi = el('span', 'hi', d.max + '℃');
+      t.appendChild(hi);
+    }
+    if (isNum(d.min)) {
+      if (t.childNodes.length) { t.appendChild(document.createTextNode(' / ')); }
+      t.appendChild(el('span', 'lo', d.min + '℃'));
+    }
+    if (!t.childNodes.length) { t.textContent = '—'; }
+    tr.appendChild(t);
+
+    tr.appendChild(el('td', 'd-p', isNum(d.pop) ? d.pop + '%' : '—'));
+    body.appendChild(tr);
+  });
+}
+
+function renderStatus() {
+  var ul = $('status-list');
+  ul.innerHTML = '';
+  var order = ['jma', 'jma_forecast', 'model', 'yahoo', 'weathernews', 'snapshot'];
+  var sorted = state.status.slice().sort(function (a, b) {
+    return order.indexOf(a.key) - order.indexOf(b.key);
+  });
+  sorted.forEach(function (s) {
+    var li = el('li');
+    var cls = s.ok === true ? 'ok' : (s.ok === false ? 'ng' : 'off');
+    var text = s.ok === true ? '取得' : (s.ok === false ? '失敗' : '未取得');
+    li.appendChild(el('span', 'badge ' + cls, text));
+    var d = el('div');
+    d.appendChild(el('span', 'status__name', s.name));
+    d.appendChild(document.createElement('br'));
+    d.appendChild(el('span', 'status__msg', s.msg || ''));
+    li.appendChild(d);
+    ul.appendChild(li);
+  });
+}
+
+function renderAll() {
+  renderPlace();
+  renderNow();
+  renderCompare();
+  renderChart();
+  renderDaily();
+  renderStatus();
+}
+
+/* ---------------------------------------------------------
+   地点の保存と読み込み
+   --------------------------------------------------------- */
+function savePlace(p) {
+  try { localStorage.setItem(STORE_KEY, JSON.stringify(p)); } catch (e) { /* 使えなくても動きます */ }
+}
+function loadPlace() {
+  try {
+    var raw = localStorage.getItem(STORE_KEY);
+    if (raw) {
+      var p = JSON.parse(raw);
+      if (isNum(p.lat) && isNum(p.lon)) { return p; }
+    }
+  } catch (e) { /* 壊れていたら既定値 */ }
+  return null;
+}
+
+function fillOfficeSelect() {
+  var sel = $('in-office');
+  if (!state.offices || sel.options.length > 1) { return; }
+  var codes = Object.keys(state.offices).sort();
+  codes.forEach(function (code) {
+    var o = document.createElement('option');
+    o.value = code;
+    o.textContent = state.offices[code];
+    sel.appendChild(o);
+  });
+  sel.value = state.place.office || '';
+}
+
+/* ---------------------------------------------------------
+   読み込み
+   --------------------------------------------------------- */
+var busy = false;
+
+function setBusy(on) {
+  busy = on;
+  $('btn-reload').disabled = on;
+  $('btn-reload').textContent = on ? '取得中…' : '更新';
+}
+
+function refresh() {
+  if (busy) { return Promise.resolve(); }
+  setBusy(true);
+  state.now = {};
+  state.future = {};
+  state.past = [];
+  state.daily = [];
+  state.status = [];
+  state.station = null;
+  renderStatus();
+
+  return loadAreas()
+    .then(function () {
+      fillOfficeSelect();
+      return loadAmedas(state.place).catch(function () { return null; });
+    })
+    .then(function (hit) {
+      var jobs = [
+        loadForecast(state.place),
+        loadModel(state.place),
+        loadSnapshot()
+      ];
+      if (hit) {
+        jobs.push(loadAmedasPast(hit.station.code, hit.obsTime).catch(function () { return null; }));
+      }
+      return Promise.all(jobs);
+    })
+    .then(function () {
+      renderAll();
+      setBusy(false);
+    })
+    .catch(function (e) {
+      setStatus('app', false, String(e && e.message ? e.message : e));
+      renderAll();
+      setBusy(false);
+    });
+}
+
+function applyPlace(p) {
+  state.place = p;
+  savePlace(p);
+  renderPlace();
+  refresh();
+}
+
+function locate() {
+  if (!navigator.geolocation) {
+    setStatus('app', false, 'この端末では現在地を取得できません');
+    renderStatus();
+    return;
+  }
+  $('btn-locate').disabled = true;
+  navigator.geolocation.getCurrentPosition(
+    function (pos) {
+      $('btn-locate').disabled = false;
+      applyPlace({
+        lat: Math.round(pos.coords.latitude * 10000) / 10000,
+        lon: Math.round(pos.coords.longitude * 10000) / 10000,
+        label: null,
+        office: null
+      });
+    },
+    function (err) {
+      $('btn-locate').disabled = false;
+      setStatus('app', false, '現在地を取得できませんでした（' + (err && err.message ? err.message : '許可されていません') + '）');
+      renderStatus();
+    },
+    { enableHighAccuracy: false, timeout: 10000, maximumAge: 5 * 60 * 1000 }
+  );
+}
+
+/* ---------------------------------------------------------
+   起動
+   --------------------------------------------------------- */
+function init() {
+  state.place = loadPlace() || {
+    lat: DEFAULT_PLACE.lat, lon: DEFAULT_PLACE.lon, label: DEFAULT_PLACE.label, office: null
+  };
+
+  $('btn-reload').addEventListener('click', function () { refresh(); });
+  $('btn-locate').addEventListener('click', locate);
+
+  $('btn-apply').addEventListener('click', function () {
+    var lat = parseFloat($('in-lat').value);
+    var lon = parseFloat($('in-lon').value);
+    if (!isNum(lat) || !isNum(lon) || lat < 20 || lat > 46 || lon < 122 || lon > 154) {
+      setStatus('app', false, '緯度・経度は日本の範囲（緯度20〜46、経度122〜154）で入れてください');
+      renderStatus();
+      return;
+    }
+    applyPlace({ lat: lat, lon: lon, label: null, office: $('in-office').value || null });
+  });
+
+  $('btn-default').addEventListener('click', function () {
+    $('in-office').value = '';
+    applyPlace({ lat: DEFAULT_PLACE.lat, lon: DEFAULT_PLACE.lon, label: DEFAULT_PLACE.label, office: null });
+  });
+
+  $('in-surface').addEventListener('input', function () {
+    state.surface = parseFloat(this.value);
+    renderDew();
+  });
+
+  Array.prototype.forEach.call(document.querySelectorAll('.seg__btn'), function (b) {
+    b.addEventListener('click', function () {
+      Array.prototype.forEach.call(document.querySelectorAll('.seg__btn'), function (o) {
+        o.classList.toggle('is-on', o === b);
+        o.setAttribute('aria-selected', o === b ? 'true' : 'false');
+      });
+      state.chartMode = b.getAttribute('data-mode');
+      renderChart();
+    });
+  });
+
+  renderPlace();
+  refresh();
+
+  /* すでに許可されていれば現在地に合わせます（初回は「現在地」ボタンから） */
+  if (navigator.permissions && navigator.permissions.query) {
+    navigator.permissions.query({ name: 'geolocation' }).then(function (st) {
+      if (st.state === 'granted') { locate(); }
+    }).catch(function () { /* 対応していない端末では何もしません */ });
+  }
+
+  /* 10分ごとに更新。画面を見ていないときは動かしません */
+  setInterval(function () {
+    if (document.visibilityState === 'visible') { refresh(); }
+  }, AUTO_RELOAD_MS);
+}
+
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', init);
+} else {
+  init();
+}
