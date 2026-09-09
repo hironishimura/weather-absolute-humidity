@@ -13,6 +13,7 @@ CSSとJavaScriptを本体に埋め込むので、できたファイルをダブ�
 """
 
 import os
+import re
 import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -35,14 +36,11 @@ def build():
         if "</script" in body.lower():
             raise SystemExit("%s に </script> が含まれていて埋め込めません" % name)
 
-    html = html.replace(
-        '<link rel="stylesheet" href="./assets/app.css">',
-        "<style>\n" + css + "\n</style>",
-    )
-    html = html.replace(
-        '<script src="./assets/app.js" defer></script>',
-        "<script>\n" + js + "\n</script>",
-    )
+    # ?v=… が付いていても差し替えられるようにする
+    html = re.sub(r'<link rel="stylesheet" href="\./assets/app\.css[^"]*">',
+                  lambda m: "<style>\n" + css + "\n</style>", html, count=1)
+    html = re.sub(r'<script src="\./assets/app\.js[^"]*" defer></script>',
+                  lambda m: "<script>\n" + js + "\n</script>", html, count=1)
     if "./assets/" in html:
         raise SystemExit("埋め込めていない参照が残っています")
 
@@ -55,6 +53,14 @@ def build():
 
 
 def main():
+    # 読み込むファイルの印を先に付け替えておく
+    try:
+        sys.path.insert(0, HERE)
+        import stamp_assets
+        stamp_assets.stamp()
+    except Exception as e:                          # noqa: BLE001  失敗しても1ファイル版は作る
+        print("（印の付け替えを飛ばしました: %s）" % e)
+
     out = sys.argv[1] if len(sys.argv) > 1 else DEFAULT_OUT
     os.makedirs(os.path.dirname(out), exist_ok=True)
     body = build()

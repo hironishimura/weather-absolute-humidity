@@ -196,6 +196,18 @@ python3 scripts/probe.py --around "https://…" --pattern "湿度"
 
 気圧 `P` は観測値があればそれを、なければ観測所の標高から推定した値を使います。
 
+## CSS・JavaScript を直したら
+
+ブラウザは同じURLのファイルをしばらく使い回します。中身を直しても
+URLが同じだと古いままになり、画面と動きが食い違います。
+中身から作った印を付け替えてください。
+
+```bash
+python3 scripts/stamp_assets.py     # docs/index.html の ?v=… を付け替える
+```
+
+`python3 scripts/build_single.py` を実行すると、これも一緒に行われます。
+
 ## 確認
 
 ```bash

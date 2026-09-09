@@ -1474,7 +1474,8 @@ function renderStatus() {
 
 function renderColorPickers() {
   var box = $('color-grid');
-  if (!box || box.childNodes.length) { return; }   /* 一度だけ作ります */
+  if (!box) { return; }
+  box.innerHTML = '';
   ['jma', 'model', 'yahoo', 'weathernews'].forEach(function (k) {
     var row = el('label', 'colors__row');
     var input = document.createElement('input');
@@ -1488,8 +1489,11 @@ function renderColorPickers() {
       renderChart();
       renderWeekly();
     });
+    var hex = el('span', 'hex', input.value.toUpperCase());
+    input.addEventListener('input', function () { hex.textContent = this.value.toUpperCase(); });
     row.appendChild(input);
     row.appendChild(document.createTextNode(SOURCES[k].name));
+    row.appendChild(hex);
     box.appendChild(row);
   });
 }
@@ -1497,9 +1501,7 @@ function renderColorPickers() {
 function resetColors() {
   state.colors = {};
   saveColors();
-  Array.prototype.forEach.call(document.querySelectorAll('#color-grid input[type=color]'), function (i) {
-    i.value = colorOf(i.getAttribute('data-src'));
-  });
+  renderColorPickers();
   renderSources();
   renderChart();
   renderWeekly();
