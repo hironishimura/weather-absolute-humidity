@@ -69,6 +69,15 @@ ok('宇都宮〜東京の距離 ≒ 100km', near(ctx.distanceKm(36.5551, 139.882
 ok('風向16方位', ctx.windText({ wind: [3.2, 0], windDirection: [1, 0] }) === '北 3.2 m/s', ctx.windText({wind:[3.2,0],windDirection:[1,0]}));
 ok('静穏', ctx.windText({ wind: [0, 0], windDirection: [0, 0] }) === '静穏 0.0 m/s', ctx.windText({wind:[0,0],windDirection:[0,0]}));
 
+console.log('\n■ 提供元の色');
+ctx.state.colors = {};
+ok('決めていなければ既定の色', ctx.colorOf('jma') === ctx.SOURCES.jma.color, ctx.colorOf('jma'));
+ctx.state.colors = { jma: '#123456' };
+ok('決めた色が優先される', ctx.colorOf('jma') === '#123456');
+ok('決めていない提供元は既定のまま', ctx.colorOf('yahoo') === ctx.SOURCES.yahoo.color);
+ok('知らない名前でも落ちない', typeof ctx.colorOf('unknown') === 'string');
+ctx.state.colors = {};
+
 console.log('\n■ 見出しの平均');
 ctx.state.now = {
   jma:   { values: { temp: 26.0, rh: 68, vh: 16.6, mr: 14.5, dp: 19.6, di: 75.1, pressure: 1002.4 } },

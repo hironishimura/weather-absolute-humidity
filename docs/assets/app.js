@@ -19,6 +19,7 @@ var SNAPSHOT = './data/latest.json';
 var DEFAULT_PLACE = { lat: 36.5551, lon: 139.8828, label: '栃木県宇都宮市' };
 var STORE_KEY = 'dc-weather-places';
 var STORE_KEY_OLD = 'dc-weather-place';
+var COLOR_KEY = 'dc-weather-colors';
 var AUTO_RELOAD_MS = 10 * 60 * 1000;
 
 /* 提供元の表示名と色（CSS変数と合わせています） */
@@ -96,6 +97,28 @@ var TELOP = {
   '421':'朝の内雪後くもり','422':'雪昼頃から雨','423':'雪夕方から雨','425':'雪一時強く降る',
   '426':'雪後みぞれ','427':'雪一時みぞれ','450':'雪で雷を伴う'
 };
+
+/* ---------------------------------------------------------
+   提供元の色
+   --------------------------------------------------------- */
+function colorOf(key) {
+  return state.colors[key] || (SOURCES[key] && SOURCES[key].color) || '#888888';
+}
+
+function saveColors() {
+  try { localStorage.setItem(COLOR_KEY, JSON.stringify(state.colors)); } catch (e) { /* 使えなくても動きます */ }
+}
+
+function loadColors() {
+  try {
+    var raw = localStorage.getItem(COLOR_KEY);
+    if (raw) {
+      var v = JSON.parse(raw);
+      if (v && typeof v === 'object') { return v; }
+    }
+  } catch (e) { /* 壊れていたら既定の色 */ }
+  return {};
+}
 
 /* ---------------------------------------------------------
    湿り空気の計算
@@ -276,7 +299,8 @@ var state = {
   officeName: '',
   status: [],
   chartDays: 2,
-  surface: 10
+  surface: 10,
+  colors: {}          /* 提供元ごとの色（変えたものだけ） */
 };
 
 var cache = { amedasTable: null };
@@ -867,7 +891,7 @@ function renderSources() {
   keys.forEach(function (k) {
     var n = state.now[k];
     var card = el('article', 'src');
-    card.style.setProperty('--dot', SOURCES[k].color);
+    card.style.setProperty('--dot', colorOf(k));
 
     var head = el('div', 'src__head');
     head.appendChild(el('p', 'src__name', SOURCES[k].name));
@@ -1136,14 +1160,14 @@ function chartSeries() {
   var jmaPops = popRowsFor('jma', weeklyByKey);
 
   if (state.past.length) {
-    out.push({ key: 'jma', color: SOURCES.jma.color, rows: state.past, popRows: jmaPops, note: '' });
+    out.push({ key: 'jma', color: colorOf('jma'), rows: state.past, popRows: jmaPops, note: '' });
   } else if (state.now.jma && state.now.jma.values) {
     out.push({
-      key: 'jma', color: SOURCES.jma.color, rows: [pointRow(state.now.jma)],
+      key: 'jma', color: colorOf('jma'), rows: [pointRow(state.now.jma)],
       popRows: jmaPops, single: true, note: ''
     });
   } else if (jmaPops.length) {
-    out.push({ key: 'jma', color: SOURCES.jma.color, rows: [], popRows: jmaPops, note: '' });
+    out.push({ key: 'jma', color: colorOf('jma'), rows: [], popRows: jmaPops, note: '' });
   }
 
   ['model', 'yahoo', 'weathernews'].forEach(function (k) {
@@ -1155,16 +1179,16 @@ function chartSeries() {
 
     if (state.future[k] && state.future[k].length) {
       out.push({
-        key: k, color: SOURCES[k].color, rows: state.future[k], popRows: popRows, note: '予報',
+        key: k, color: colorOf(k), rows: state.future[k], popRows: popRows, note: '予報',
         nowPoint: (state.now[k] && state.now[k].values) ? pointRow(state.now[k]) : null
       });
     } else if (state.now[k] && state.now[k].values) {
       out.push({
-        key: k, color: SOURCES[k].color, rows: [pointRow(state.now[k])],
+        key: k, color: colorOf(k), rows: [pointRow(state.now[k])],
         popRows: popRows, single: true, note: '現在値'
       });
     } else if (popRows) {
-      out.push({ key: k, color: SOURCES[k].color, rows: [], popRows: popRows, note: '降水確率' });
+      out.push({ key: k, color: colorOf(k), rows: [], popRows: popRows, note: '降水確率' });
     }
   });
   return out;
@@ -1179,7 +1203,7 @@ function dailyMarks(xMin, xMax) {
     if (!j) { return; }
     if (!isNum(j.max) && !isNum(j.min) && !j.weather) { return; }
     marks.push({
-      t0: d.t0, t1: d.t1, color: SOURCES.jma.color,
+      t0: d.t0, t1: d.t1, color: colorOf('jma'),
       max: isNum(j.max) ? j.max : null,
       min: isNum(j.min) ? j.min : null,
       weather: j.weather || ''
@@ -1215,7 +1239,7 @@ function renderChart() {
   });
   var mk = el('span', 'legend__i');
   var ring = el('span', 'legend__r');
-  ring.style.borderColor = SOURCES.jma.color;
+  ring.style.borderColor = colorOf('jma');
   mk.appendChild(ring);
   mk.appendChild(document.createTextNode('気象庁の日ごとの最高／最低と天気'));
   legend.appendChild(mk);
@@ -1389,7 +1413,7 @@ function renderWeekly() {
 
   Array.prototype.forEach.call(document.querySelectorAll('.wk-dot'), function (dot) {
     var k = dot.getAttribute('data-src');
-    if (SOURCES[k]) { dot.style.background = SOURCES[k].color; }
+    if (SOURCES[k]) { dot.style.background = colorOf(k); }
   });
 
   var w = buildWeekly();
@@ -1448,6 +1472,39 @@ function renderStatus() {
   });
 }
 
+function renderColorPickers() {
+  var box = $('color-grid');
+  if (!box || box.childNodes.length) { return; }   /* 一度だけ作ります */
+  ['jma', 'model', 'yahoo', 'weathernews'].forEach(function (k) {
+    var row = el('label', 'colors__row');
+    var input = document.createElement('input');
+    input.type = 'color';
+    input.value = colorOf(k);
+    input.setAttribute('data-src', k);
+    input.addEventListener('input', function () {
+      state.colors[k] = this.value;
+      saveColors();
+      renderSources();
+      renderChart();
+      renderWeekly();
+    });
+    row.appendChild(input);
+    row.appendChild(document.createTextNode(SOURCES[k].name));
+    box.appendChild(row);
+  });
+}
+
+function resetColors() {
+  state.colors = {};
+  saveColors();
+  Array.prototype.forEach.call(document.querySelectorAll('#color-grid input[type=color]'), function (i) {
+    i.value = colorOf(i.getAttribute('data-src'));
+  });
+  renderSources();
+  renderChart();
+  renderWeekly();
+}
+
 function renderAll() {
   renderPlace();
   renderNow();
@@ -1455,6 +1512,7 @@ function renderAll() {
   renderChart();
   renderWeekly();
   renderStatus();
+  renderColorPickers();
 }
 
 /* ---------------------------------------------------------
@@ -1624,6 +1682,7 @@ function useActive() {
   savePlaces();
   renderChips();
   fillForm();
+  renderColorPickers();
   renderPlace();
   refresh();
 }
@@ -1671,6 +1730,7 @@ function locate() {
    起動
    --------------------------------------------------------- */
 function init() {
+  state.colors = loadColors();
   var saved = loadPlaces() || defaultPlaces();
   state.places = saved.list;
   state.activeId = saved.activeId || (saved.list[0] && saved.list[0].id);
@@ -1678,6 +1738,7 @@ function init() {
 
   $('btn-reload').addEventListener('click', function () { refresh(); });
   $('btn-locate').addEventListener('click', locate);
+  $('btn-color-reset').addEventListener('click', resetColors);
 
   $('btn-save').addEventListener('click', function () {
     var v = readForm();
@@ -1734,6 +1795,7 @@ function init() {
 
   renderChips();
   fillForm();
+  renderColorPickers();
   renderPlace();
   refresh();
 

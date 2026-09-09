@@ -114,6 +114,14 @@
     </div>
     <p class="lead">過去24時間の実況と、これからの予報をひとつの時間軸に並べています。縦の点線が現在時刻です。</p>
     <div id="legend" class="legend"></div>
+    <details class="colors">
+      <summary>色を変える</summary>
+      <div class="colors__grid" id="color-grid"></div>
+      <div class="colors__btns">
+        <button type="button" id="btn-color-reset" class="btn btn--ghost">元の色に戻す</button>
+      </div>
+      <p class="note">選んだ色はこの端末のブラウザに保存され、グラフ・凡例・カード・週間表のすべてに使われます。</p>
+    </details>
     <div id="charts" class="charts">
       <p class="empty">読み込み中…</p>
     </div>
