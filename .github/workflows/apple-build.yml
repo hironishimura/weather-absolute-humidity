@@ -73,26 +73,23 @@ jobs:
 
       - name: 中身が入っているか確かめる
         # ソースが1本も入っていなくてもビルドは通ってしまうので、
-        # 出来上がったアプリに実行ファイルが入っていることを見ておきます。
+        # 出来上がったアプリに自分で書いたコードが入っていることを見ておきます。
+        # Xcode は Debug ビルドで本体を .debug.dylib に分けることがあるので、
+        # アプリの中の実行できるファイルを全部あたります。
         run: |
           APP=$(find /tmp/dd/Build/Products -maxdepth 2 -name '*.app' | head -1)
-          echo "できたもの: $APP"
           if [ -z "$APP" ]; then echo "アプリが見つかりません"; exit 1; fi
+          echo "できたもの: $APP（全体 $(du -sk "$APP" | cut -f1) KB）"
+          find "$APP" -type f -size +8k | sed "s|$APP|.|"
 
-          PLIST="$APP/Info.plist"
-          [ -f "$PLIST" ] || PLIST="$APP/Contents/Info.plist"
-          NAME=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$PLIST")
-          BIN="$APP/$NAME"
-          [ -f "$BIN" ] || BIN="$APP/Contents/MacOS/$NAME"
-          if [ ! -f "$BIN" ]; then echo "実行ファイルが見つかりません"; exit 1; fi
-          echo "実行ファイル: $BIN（$(stat -f%z "$BIN") バイト）"
+          found_app=0
+          found_core=0
+          while IFS= read -r f; do
+            syms=$(nm -a "$f" 2>/dev/null || true)
+            case "$syms" in *WeatherAHApp*) found_app=1;; esac
+            case "$syms" in *WeatherCore*) found_core=1;; esac
+          done < <(find "$APP" -type f)
 
-          # 自分で書いた型が実際に入っているか
-          if ! nm -a "$BIN" 2>/dev/null | grep -q 'WeatherAHApp'; then
-            echo "アプリ側のコードが入っていません"; exit 1
-          fi
-          if ! (nm -a "$BIN" 2>/dev/null; \
-                find "$APP" -name 'WeatherCore*' -maxdepth 4) | grep -q 'WeatherCore'; then
-            echo "WeatherCore が入っていません"; exit 1
-          fi
-          echo "中身は入っています（アプリ全体 $(du -sk "$APP" | cut -f1) KB）"
+          if [ "$found_app" -ne 1 ]; then echo "アプリ側のコードが入っていません"; exit 1; fi
+          if [ "$found_core" -ne 1 ]; then echo "WeatherCore が入っていません"; exit 1; fi
+          echo "アプリ側のコードと WeatherCore の両方が入っています"
