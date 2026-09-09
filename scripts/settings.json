@@ -30,7 +30,9 @@
         "enabled": true,
         "wait_ms": 4000,
         "scroll": true
-      }
+      },
+      "_weekly_url": "週間予報が別ページにある場合のURL。空なら使いません。",
+      "weekly_url": "https://weathernews.jp/onebox/tenki/2week/tochigi/09201/"
     }
   }
 }
