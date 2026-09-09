@@ -10,23 +10,37 @@ struct PlaceListView: View {
     @Environment(SettingsStore.self) private var settings
     @Binding var editing: Place?
     @Binding var addingNew: Bool
+    /// iPhone では選んだら閉じます
+    var onSelect: (() -> Void)?
 
     var body: some View {
-        @Bindable var settings = settings
-        List(selection: Binding(
-            get: { settings.active.id },
-            set: { settings.select($0 ?? settings.active.id) }
-        )) {
+        List {
             Section {
                 ForEach(settings.places) { place in
                     HStack {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(place.label.isEmpty ? "名前のない地点" : place.label)
-                            Text(String(format: "%.4f, %.4f", place.lat, place.lon))
-                                .font(.caption2.monospacedDigit())
-                                .foregroundStyle(.secondary)
+                        // 行そのものが「この地点にする」ボタン
+                        Button {
+                            settings.select(place.id)
+                            onSelect?()
+                        } label: {
+                            HStack(spacing: 10) {
+                                Image(systemName: place.id == settings.active.id
+                                      ? "largecircle.fill.circle" : "circle")
+                                    .foregroundStyle(place.id == settings.active.id
+                                                     ? Color.accentColor : .secondary)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(place.label.isEmpty ? "名前のない地点" : place.label)
+                                        .foregroundStyle(.primary)
+                                    Text(String(format: "%.4f, %.4f", place.lat, place.lon))
+                                        .font(.caption2.monospacedDigit())
+                                        .foregroundStyle(.secondary)
+                                }
+                                Spacer(minLength: 0)
+                            }
+                            .contentShape(Rectangle())
                         }
-                        Spacer()
+                        .buttonStyle(.borderless)
+
                         Button {
                             editing = place
                         } label: {
@@ -35,7 +49,6 @@ struct PlaceListView: View {
                         .buttonStyle(.borderless)
                         .foregroundStyle(.secondary)
                     }
-                    .tag(place.id)
                 }
                 .onDelete { offsets in
                     for i in offsets where settings.places.indices.contains(i) {

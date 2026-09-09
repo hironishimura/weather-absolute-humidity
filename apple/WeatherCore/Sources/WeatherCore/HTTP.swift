@@ -60,13 +60,37 @@ extension Fetching {
         guard let s = String(data: data, encoding: .utf8) else { throw FetchError.badBody }
         return s
     }
+
+    /// 置き場所の候補を上から試して、最初に読めたものを返す
+    func decodeFirst<T: Decodable>(_ type: T.Type, from urls: [URL]) async throws -> T {
+        var last: Error = FetchError.noValue("読みに行く先がありません")
+        for url in urls {
+            do {
+                return try await decode(type, from: url)
+            } catch {
+                last = error
+            }
+        }
+        throw last
+    }
 }
 
 public enum Endpoints {
     public static let jma = "https://www.jma.go.jp/bosai"
     public static let openMeteo = "https://api.open-meteo.com/v1/forecast"
-    /// GitHub Actions が書き出している取り込みファイルの置き場所
-    public static let snapshotBase = "https://hironishimura.github.io/weather-absolute-humidity/data"
+    /// GitHub Actions が書き出している取り込みファイルの置き場所。
+    ///
+    /// GitHub Pages はリポジトリの根元を公開していて、アプリ本体は docs/ の下にあります。
+    /// 公開の設定を docs/ 直下に変えても届くよう、上から順に試します。
+    public static let snapshotBases = [
+        "https://hironishimura.github.io/weather-absolute-humidity/docs/data",
+        "https://hironishimura.github.io/weather-absolute-humidity/data",
+    ]
+
+    /// 取り込みファイルの置き場所を順に並べた URL
+    public static func snapshotURLs(_ name: String) -> [URL] {
+        snapshotBases.compactMap { URL(string: "\($0)/\(name)") }
+    }
 
     public static func url(_ s: String) -> URL {
         URL(string: s) ?? URL(string: "https://www.jma.go.jp/")!

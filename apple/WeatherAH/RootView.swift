@@ -1,6 +1,8 @@
 //  全体の入れもの
 //
-//  iPhone では1枚、iPad と Mac では左に地点、右に中身が出ます。
+//  iPad と Mac は「左に地点・右に天気」の2画面。
+//  iPhone は画面がせまいので、天気を最初に出して、
+//  地点は左上のボタンから開くようにしています。
 
 import SwiftUI
 import WeatherCore
@@ -9,29 +11,66 @@ struct RootView: View {
     @Environment(SettingsStore.self) private var settings
     @Environment(WeatherStore.self) private var weather
 
+    #if os(iOS)
+    @Environment(\.horizontalSizeClass) private var sizeClass
+    #endif
+
     @State private var columns = NavigationSplitViewVisibility.automatic
     @State private var editing: Place?
     @State private var addingNew = false
     @State private var showColors = false
+    @State private var showPlaces = false
 
     var body: some View {
+        content
+            .task(id: settings.active.id) {
+                await weather.refresh(place: settings.active)
+            }
+            .sheet(item: $editing) { place in
+                PlaceEditor(place: place, isNew: false)
+            }
+            .sheet(isPresented: $addingNew) {
+                PlaceEditor(place: Place(label: "", lat: 35.6812, lon: 139.7671), isNew: true)
+            }
+            .sheet(isPresented: $showColors) {
+                ColorSettingsView()
+            }
+            .sheet(isPresented: $showPlaces) {
+                NavigationStack {
+                    PlaceListView(editing: $editing, addingNew: $addingNew,
+                                  onSelect: { showPlaces = false })
+                        .navigationTitle("地点")
+                        .toolbar {
+                            ToolbarItem(placement: .confirmationAction) {
+                                Button("閉じる") { showPlaces = false }
+                            }
+                        }
+                }
+            }
+    }
+
+    /// せまい画面（iPhone）は1枚、広い画面（iPad・Mac）は2画面
+    @ViewBuilder
+    private var content: some View {
+        #if os(iOS)
+        if sizeClass == .compact {
+            NavigationStack {
+                DetailView(showColors: $showColors, showPlaces: $showPlaces, compact: true)
+            }
+        } else {
+            splitView
+        }
+        #else
+        splitView
+        #endif
+    }
+
+    private var splitView: some View {
         NavigationSplitView(columnVisibility: $columns) {
-            PlaceListView(editing: $editing, addingNew: $addingNew)
+            PlaceListView(editing: $editing, addingNew: $addingNew, onSelect: nil)
                 .navigationTitle("地点")
         } detail: {
-            DetailView(showColors: $showColors)
-        }
-        .task(id: settings.active.id) {
-            await weather.refresh(place: settings.active)
-        }
-        .sheet(item: $editing) { place in
-            PlaceEditor(place: place, isNew: false)
-        }
-        .sheet(isPresented: $addingNew) {
-            PlaceEditor(place: Place(label: "", lat: 35.6812, lon: 139.7671), isNew: true)
-        }
-        .sheet(isPresented: $showColors) {
-            ColorSettingsView()
+            DetailView(showColors: $showColors, showPlaces: $showPlaces, compact: false)
         }
     }
 }
@@ -40,6 +79,8 @@ private struct DetailView: View {
     @Environment(SettingsStore.self) private var settings
     @Environment(WeatherStore.self) private var weather
     @Binding var showColors: Bool
+    @Binding var showPlaces: Bool
+    var compact: Bool
 
     var body: some View {
         ScrollView {
@@ -64,6 +105,17 @@ private struct DetailView: View {
         .navigationBarTitleDisplayMode(.inline)
         #endif
         .toolbar {
+            #if os(iOS)
+            if compact {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button {
+                        showPlaces = true
+                    } label: {
+                        Label("地点", systemImage: "list.bullet")
+                    }
+                }
+            }
+            #endif
             ToolbarItem(placement: .primaryAction) {
                 Button {
                     Task { await weather.refresh(place: settings.active) }

@@ -124,14 +124,24 @@ struct ChartsSection: View {
             .chartXScale(domain: from...to)
             .chartYScale(domain: yDomain(series))
             .chartXAxis {
-                AxisMarks(values: AxisTicks.hourMarks(from: from, to: to, step: tick.step)) { value in
-                    AxisGridLine()
+                // 日の変わり目には日付を出します（Web版と同じ）
+                AxisMarks(values: AxisTicks.dayStarts(from: from, to: to)) { value in
+                    AxisGridLine(stroke: StrokeStyle(lineWidth: 1))
+                        .foregroundStyle(.secondary)
                     AxisValueLabel {
                         if let d = value.as(Date.self) {
-                            let hour = JST.parts(d).hour ?? 0
-                            if tick.step >= 24 {
-                                Text(Format.shortDate(d)).font(.caption2)
-                            } else {
+                            Text(Format.shortDate(d))
+                                .font(.caption2.weight(.semibold))
+                        }
+                    }
+                }
+                // 時刻の目盛り。0時には日付が出ているので、そこは重ねません。
+                AxisMarks(values: AxisTicks.hourMarks(from: from, to: to, step: tick.step)) { value in
+                    if (value.as(Date.self).map { JST.parts($0).hour ?? 0 } ?? 0) != 0 {
+                        AxisGridLine()
+                        AxisValueLabel {
+                            if let d = value.as(Date.self) {
+                                let hour = JST.parts(d).hour ?? 0
                                 Text(tick.withUnit ? "\(hour)時" : "\(hour)")
                                     .font(.caption2)
                             }

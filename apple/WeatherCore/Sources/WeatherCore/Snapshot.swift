@@ -87,8 +87,8 @@ public struct SnapshotClient: Sendable {
     public init(fetcher: Fetching) { self.fetcher = fetcher }
 
     public func load(place: Place) async throws -> SnapshotResult {
-        let file = try await fetcher.decode(SnapshotFile.self,
-                                            from: Endpoints.url("\(Endpoints.snapshotBase)/latest.json"))
+        let file = try await fetcher.decodeFirst(SnapshotFile.self,
+                                                 from: Endpoints.snapshotURLs("latest.json"))
         return Self.build(file, place: place)
     }
 

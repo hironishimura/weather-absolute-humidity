@@ -219,3 +219,46 @@ final class アメダスを読む: XCTestCase {
         XCTAssertEqual(near[0].alt, 100)              // 一番近いのはダミー地点
     }
 }
+
+
+final class 取り込みファイルの置き場所: XCTestCase {
+
+    func test_docsの下を先に見る() {
+        let urls = Endpoints.snapshotURLs("latest.json")
+        XCTAssertEqual(urls.count, 2)
+        // GitHub Pages はリポジトリの根元を公開していて、アプリは docs/ の下にあります
+        XCTAssertTrue(urls[0].absoluteString.hasSuffix("/docs/data/latest.json"),
+                      urls[0].absoluteString)
+        XCTAssertFalse(urls[1].absoluteString.contains("/docs/"))
+    }
+
+    func test_当たり具合も同じ置き場所() {
+        XCTAssertTrue(Endpoints.snapshotURLs("accuracy.json")[0]
+            .absoluteString.hasSuffix("/docs/data/accuracy.json"))
+    }
+
+    func test_最初が読めなければ次を試す() async throws {
+        let f = 取得の差し替え()
+        // docs 付きは 404、付いていないほうだけ置いておく
+        f.put("weather-absolute-humidity/data/latest.json",
+              json: ["generated_at": "2026-09-09T22:00:00+09:00",
+                     "places": [["id": "a", "label": "宇都宮", "lat": 36.5551, "lon": 139.8828,
+                                 "sources": ["yahoo": ["ok": true, "label": "宇都宮",
+                                                       "current": ["time": "2026-09-09T22:00:00+09:00",
+                                                                   "temp": 19.0, "humidity": 94.0]]]]]])
+        let r = try await SnapshotClient(fetcher: f).load(place: .宇都宮)
+        XCTAssertEqual(r.sources.count, 1)
+        XCTAssertEqual(r.sources[0].now?.values.temp, 19.0)
+        XCTAssertEqual(f.requested.count, 2)   // 1つ目で失敗して2つ目に行った
+    }
+
+    func test_どちらも読めなければ失敗する() async {
+        let f = 取得の差し替え()
+        do {
+            _ = try await SnapshotClient(fetcher: f).load(place: .宇都宮)
+            XCTFail("読めないはずです")
+        } catch {
+            XCTAssertEqual(f.requested.count, 2)
+        }
+    }
+}

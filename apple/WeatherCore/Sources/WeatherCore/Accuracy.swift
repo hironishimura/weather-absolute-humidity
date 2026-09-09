@@ -76,8 +76,8 @@ public struct AccuracyClient: Sendable {
     public init(fetcher: Fetching) { self.fetcher = fetcher }
 
     public func load(place: Place) async throws -> AccuracyResult {
-        let file = try await fetcher.decode(AccuracyFile.self,
-                                            from: Endpoints.url("\(Endpoints.snapshotBase)/accuracy.json"))
+        let file = try await fetcher.decodeFirst(AccuracyFile.self,
+                                                 from: Endpoints.snapshotURLs("accuracy.json"))
         return Self.build(file, place: place)
     }
 
