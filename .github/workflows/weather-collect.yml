@@ -8,11 +8,9 @@ name: 気象データの取り込み
 # 気象庁の実況と予報はアプリが直接読むので、この取り込みが動いていなくても
 # アプリ自体は問題なく使えます。
 #
-# 【動かす前に】
-#   1. scripts/settings.json の url を自分の地域のものに直し、
-#      enabled を true にする
-#   2. 各社の利用規約を確認する
-#   3. 下の schedule のコメントを外す
+# 【地点を変えるとき】
+#   scripts/settings.json の url を自分の地域のページのURLに直してください。
+#   読めなくなったら scripts/probe.py（ページの作りを調べる）が役に立ちます。
 
 
 on:
@@ -22,8 +20,13 @@ on:
         description: '書き出さずに中身だけ確認する'
         type: boolean
         default: false
-  # schedule:
-  #   - cron: '5 */3 * * *'   # 3時間おき
+  schedule:
+    - cron: '5 */3 * * *'   # 3時間おき（Yahoo!天気の表が3時間刻みなのに合わせています）
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/**'
+      - '.github/workflows/weather-collect.yml'
 
 concurrency:
   group: weather-collect
