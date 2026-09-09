@@ -10,7 +10,36 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
       - name: 読み取りの確認
         run: python3 scripts/test_collect.py
-      - name: 実際に取り込んでみる
-        run: python3 scripts/collect.py --dry-run
+      - name: ページから取り込む
+        run: python3 scripts/collect.py
+      - name: Playwright を入れる
+        run: |
+          python3 -m pip install --quiet playwright
+          python3 -m playwright install --with-deps chromium
+      - name: ブラウザで取り込む
+        run: python3 scripts/collect_browser.py
+      - name: 結果を見る
+        run: |
+          python3 - <<'PY'
+          import json
+          d = json.load(open('docs/data/latest.json', encoding='utf-8'))
+          print('取得時刻:', d['generated_at'])
+          for k, v in d['sources'].items():
+              if v.get('ok'):
+                  c = v.get('current') or {}
+                  h = v.get('hourly') or []
+                  kinds = []
+                  if any('temp' in r for r in h): kinds.append('気温')
+                  if any('humidity' in r for r in h): kinds.append('湿度')
+                  print('%-12s %-24s 現在値 %s℃ %s%%  時系列 %d点 %s' % (
+                      k, v.get('strategy'), c.get('temp'), c.get('humidity'), len(h), '・'.join(kinds)))
+                  for r in h[:3]:
+                      print('              例) %s' % r)
+              else:
+                  print('%-12s 失敗 %s' % (k, v.get('error')))
+          PY

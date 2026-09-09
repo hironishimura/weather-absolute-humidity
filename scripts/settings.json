@@ -11,14 +11,26 @@
       "_url": "Yahoo!天気で自分の地域のページを開き、そのURLをそのまま貼ってください",
       "url": "https://weather.yahoo.co.jp/weather/jp/9/4110/9201.html",
       "label": "栃木県宇都宮市",
-      "_読めるもの": "今日と明日の3時間ごとの気温・湿度"
+      "_読めるもの": "今日と明日の3時間ごとの気温・湿度",
+      "browser": {
+        "_について": "Yahoo!天気はページのHTMLだけで読めるので、ふだんは不要です。",
+        "enabled": false,
+        "wait_ms": 3000,
+        "scroll": true
+      }
     },
     "weathernews": {
       "enabled": true,
       "_url": "ウェザーニュースで自分の地域のページを開き、そのURLをそのまま貼ってください",
       "url": "https://weathernews.jp/onebox/tenki/tochigi/09201/",
       "label": "栃木県宇都宮市",
-      "_読めるもの": "実況の気温・湿度・気圧（1時間ごとの湿度は画面側で作られているため読めません）"
+      "_読めるもの": "実況の気温・湿度・気圧（1時間ごとの湿度は画面側で作られているため読めません）",
+      "browser": {
+        "_について": "ブラウザで描画してから読み取ります。要 Playwright。false にすれば使いません。",
+        "enabled": true,
+        "wait_ms": 4000,
+        "scroll": true
+      }
     }
   }
 }
