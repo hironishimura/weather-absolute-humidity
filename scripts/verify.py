@@ -153,9 +153,15 @@ def jma_pops(place):
 
 
 def model_pops(place):
-    """気象庁の数値予報（Open-Meteo経由）の1時間ごとの降水確率。"""
+    """Open-Meteo の1時間ごとの降水確率。
+
+    気象庁のモデル（MSM/GSM）そのものには降水確率が入っておらず、
+    models=jma_seamless を付けると中身が全部からになります。
+    そのため、Open-Meteo が各社のモデルをまとめて出している値をもらいます。
+    アプリの表示（docs/assets/app.js の loadModel）と同じ扱いです。
+    """
     url = ("%s?latitude=%.4f&longitude=%.4f&hourly=precipitation_probability"
-           "&models=jma_seamless&forecast_days=10&timezone=Asia%%2FTokyo"
+           "&forecast_days=10&timezone=Asia%%2FTokyo"
            % (OPEN_METEO, place["lat"], place["lon"]))
     data = get_json(url)
     h = data.get("hourly") or {}

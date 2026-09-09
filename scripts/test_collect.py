@@ -714,9 +714,11 @@ class 数値予報の降水確率(unittest.TestCase):
         self.assertEqual(got[0], (datetime(2026, 9, 9, 18, 0, tzinfo=JST), 1, 10.0))
         self.assertEqual(got[1], (datetime(2026, 9, 9, 20, 0, tzinfo=JST), 1, 40.0))
 
-    def test_気象庁のモデルを指定する(self):
+    def test_モデルは指定しない(self):
+        # 気象庁のモデルを指定すると降水確率が空で返るため、指定しません
         verify.model_pops({"lat": 36.5551, "lon": 139.8828})
-        self.assertIn("models=jma_seamless", self.calls[0])
+        self.assertNotIn("models=", self.calls[0])
+        self.assertIn("precipitation_probability", self.calls[0])
 
 
 class 直接読む予報(unittest.TestCase):
