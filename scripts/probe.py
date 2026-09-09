@@ -165,6 +165,93 @@ def probe_urls(url):
         print("   %s" % u[:150])
 
 
+def probe_raw(url):
+    """URLの中身をそのまま見る。JSONなら形も見る。"""
+    print("=" * 70)
+    print("■ 中身をそのまま見る: %s" % url)
+    try:
+        body = collect.fetch(url)
+    except Exception as e:                       # noqa: BLE001
+        print("  取得できませんでした: %s" % e)
+        return
+    print("  長さ: %d 文字" % len(body))
+    print("  先頭1200文字:")
+    print("  " + " ".join(body[:1200].split()))
+    try:
+        data = json.loads(body)
+    except ValueError:
+        print("  （JSONとしては読めませんでした）")
+        return
+    print("  → JSONとして読めました")
+
+    def walk(node, path, depth):
+        if depth > 4:
+            return
+        if isinstance(node, dict):
+            for k, v in list(node.items())[:25]:
+                kind = type(v).__name__
+                extra = ""
+                if isinstance(v, list):
+                    extra = "（%d件）" % len(v)
+                    if v and not isinstance(v[0], (dict, list)):
+                        extra += " 例: %s" % str(v[:6])
+                elif not isinstance(v, dict):
+                    extra = " = %s" % str(v)[:60]
+                print("   %s%s: %s%s" % ("  " * depth, k, kind, extra))
+                if isinstance(v, dict):
+                    walk(v, path + "/" + k, depth + 1)
+                elif isinstance(v, list) and v and isinstance(v[0], dict):
+                    print("   %s  [0] のキー: %s" % ("  " * depth, list(v[0].keys())[:20]))
+                    walk(v[0], path + "/" + k + "[0]", depth + 1)
+        elif isinstance(node, list):
+            print("   %s配列 %d件" % ("  " * depth, len(node)))
+            if node and isinstance(node[0], dict):
+                print("   %s[0] のキー: %s" % ("  " * depth, list(node[0].keys())[:20]))
+                walk(node[0], path + "[0]", depth + 1)
+
+    walk(data, "", 0)
+
+
+def probe_tables(url):
+    """気温と湿度が読めた表を、全部ぶん並べる。"""
+    print("=" * 70)
+    print("■ 読める表をすべて: %s" % url)
+    try:
+        html = collect.fetch(url)
+    except Exception as e:                       # noqa: BLE001
+        print("  取得できませんでした: %s" % e)
+        return
+    n = 0
+    for i, table in enumerate(collect.read_tables(html)):
+        for reader in (collect.series_from_rows, collect.series_from_cols):
+            got = reader(table)
+            if not got:
+                continue
+            n += 1
+            print("   表[%d]（%s）" % (i, reader.__name__))
+            print("     時刻: %s" % short([str(x) for x in (got[0] or [])], 12))
+            print("     気温: %s" % short([str(x) for x in got[1]], 12))
+            print("     湿度: %s" % short([str(x) for x in got[2]], 12))
+            break
+    print("  読めた表: %d 個" % n)
+
+
+def probe_around(url, pattern):
+    """ページの中で、ある文字の前後を見る。"""
+    print("=" * 70)
+    print("■ 前後を見る: %s（探す文字: %s）" % (url, pattern))
+    try:
+        html = collect.fetch(url)
+    except Exception as e:                       # noqa: BLE001
+        print("  取得できませんでした: %s" % e)
+        return
+    hits = list(re.finditer(re.escape(pattern), html))
+    print("  %d 箇所（先頭6件）" % len(hits))
+    for m in hits[:6]:
+        s0 = max(0, m.start() - 400)
+        print("   …%s…" % " ".join(html[s0:m.start() + 500].split())[:900])
+
+
 def probe_links(url, keyword):
     print("=" * 70)
     print("■ リンク探し: %s（含む文字: %s）" % (url, keyword))
@@ -187,8 +274,24 @@ def main():
     ap.add_argument("--links", default=None, help="リンクを探すページ")
     ap.add_argument("--scripts", default=None, help="script の中身を見るページ")
     ap.add_argument("--urls", default=None, help="ページ内のURLを並べる")
+    ap.add_argument("--raw", default=None, help="中身をそのまま見る")
+    ap.add_argument("--tables", default=None, help="読める表を全部見る")
+    ap.add_argument("--around", default=None, help="ある文字の前後を見る")
+    ap.add_argument("--pattern", default="湿度", help="--around で探す文字")
     ap.add_argument("--keyword", default="宇都宮", help="リンク探しの手がかり")
     args = ap.parse_args()
+
+    if args.raw:
+        probe_raw(args.raw)
+        return 0
+
+    if args.tables:
+        probe_tables(args.tables)
+        return 0
+
+    if args.around:
+        probe_around(args.around, args.pattern)
+        return 0
 
     if args.scripts:
         probe_scripts(args.scripts, args.keyword)
