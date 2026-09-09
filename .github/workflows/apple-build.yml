@@ -28,7 +28,10 @@ jobs:
       - name: Xcode の場所を出す
         run: xcodebuild -version && swift --version
       - name: テスト
-        run: swift test --package-path apple/WeatherCore
+        run: |
+          set -o pipefail
+          swift test --package-path apple/WeatherCore 2>&1 \
+            | grep -Ev "^Test Case .* passed|^Test Suite .* passed|' started\.$" 
 
   app:
     name: アプリのビルド
