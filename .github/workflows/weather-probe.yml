@@ -1,14 +1,15 @@
 name: ページの作りを調べる
 
-# Yahoo!天気・ウェザーニュースのページが実際どうなっているかを見るための道具。
-# 手元から外に出られない環境でも、ここから動かせばログで中身を確認できる。
-# 読み取りが壊れたときの原因調べにも使う。
+# probe ブランチに push すると走る。手元から外に出られない環境でも、
+# ここのログで Yahoo!天気・ウェザーニュースのページの中身を確認できる。
 
 on:
+  push:
+    branches: [probe]
   workflow_dispatch:
     inputs:
       url:
-        description: '調べるURL（空なら settings.json のURL）'
+        description: '調べるURL'
         type: string
         default: ''
       links:
@@ -25,12 +26,23 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: 調べる
-        run: |
-          if [ -n "${{ inputs.links }}" ]; then
-            python3 scripts/probe.py --links "${{ inputs.links }}" --keyword "${{ inputs.keyword }}"
-          elif [ -n "${{ inputs.url }}" ]; then
-            python3 scripts/probe.py --url "${{ inputs.url }}"
-          else
-            python3 scripts/probe.py
-          fi
+
+      - name: Yahoo!天気（宇都宮の候補）
+        continue-on-error: true
+        run: python3 scripts/probe.py --url "https://weather.yahoo.co.jp/weather/jp/9/4110/9201.html"
+
+      - name: Yahoo!天気（栃木県の地域ページ）
+        continue-on-error: true
+        run: python3 scripts/probe.py --url "https://weather.yahoo.co.jp/weather/jp/9/4110.html"
+
+      - name: Yahoo!天気（栃木県トップからリンクを探す）
+        continue-on-error: true
+        run: python3 scripts/probe.py --links "https://weather.yahoo.co.jp/weather/9/" --keyword "宇都宮"
+
+      - name: ウェザーニュース（宇都宮の候補）
+        continue-on-error: true
+        run: python3 scripts/probe.py --url "https://weathernews.jp/onebox/tenki/tochigi/09201/"
+
+      - name: ウェザーニュース（栃木県からリンクを探す）
+        continue-on-error: true
+        run: python3 scripts/probe.py --links "https://weathernews.jp/onebox/tenki/tochigi/" --keyword "宇都宮"
