@@ -30,10 +30,9 @@ jobs:
           for k, v in d['sources'].items():
               if not v.get('ok'):
                   print('%-12s 失敗 %s' % (k, v.get('error'))); continue
-              h = v.get('hourly') or []; w = v.get('weekly') or []
-              print('%-12s %-26s 時系列 %d点  週間 %d日' % (k, v.get('strategy'), len(h), len(w)))
-              for r in w[:8]:
-                  print('              %s' % r)
-              if h:
-                  print('              時系列の範囲: %s 〜 %s' % (h[0]['time'][:16], h[-1]['time'][:16]))
+              print('%-12s %s' % (k, v.get('strategy')))
+              print('   時系列 %d点  週間 %d日  降水確率 %d区間'
+                    % (len(v.get('hourly') or []), len(v.get('weekly') or []), len(v.get('pops') or [])))
+              for r in (v.get('pops') or [])[:6]:
+                  print('     %s' % r)
           PY

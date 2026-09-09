@@ -681,13 +681,6 @@ def collect_one(name, conf, html=None, now=None):
     if obs:
         ways.append("実況")
 
-    if not hourly and not obs and not pops and not weekly_from_html(html, now=now):
-        return {
-            "ok": False,
-            "url": url,
-            "error": "ページから気温と湿度を読み取れませんでした（作りが変わった可能性があります）",
-        }
-
     pops = pops_from_html(html, now=now)
     pops_url = conf.get("pops_url")
     if not pops and pops_url:
@@ -709,6 +702,13 @@ def collect_one(name, conf, html=None, now=None):
             print("   （週間のページを読めませんでした: %s）" % e)
     if weekly:
         ways.append("週間")
+
+    if not hourly and not obs and not pops and not weekly:
+        return {
+            "ok": False,
+            "url": url,
+            "error": "ページから気温と湿度を読み取れませんでした（作りが変わった可能性があります）",
+        }
 
     out = {
         "ok": True,
