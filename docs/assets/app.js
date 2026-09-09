@@ -637,20 +637,29 @@ function loadSnapshot() {
         }
         var rows = [];
         (s.hourly || []).forEach(function (r) {
-          if (!isNum(r.temp) || !isNum(r.humidity)) { return; }
-          rows.push({
-            time: new Date(r.time),
-            temp: r.temp,
-            rh: r.humidity,
-            vh: volumetricHumidity(r.temp, r.humidity),
-            mr: mixingRatio(r.temp, r.humidity, r.pressure)
-          });
+          var t = new Date(r.time);
+          if (isNaN(t.getTime())) { return; }
+          /* 気温だけ・湿度だけの提供元もあるので、あるものだけ入れる */
+          var row = { time: t };
+          var has = false;
+          if (isNum(r.temp)) { row.temp = r.temp; has = true; }
+          if (isNum(r.humidity)) { row.rh = r.humidity; has = true; }
+          if (isNum(r.temp) && isNum(r.humidity)) {
+            row.vh = volumetricHumidity(r.temp, r.humidity);
+            row.mr = mixingRatio(r.temp, r.humidity, r.pressure);
+          }
+          if (isNum(r.pop)) { row.pop = r.pop; has = true; }
+          if (has) { rows.push(row); }
         });
         rows.sort(function (a, b) { return a.time - b.time; });
         if (rows.length) { state.future[key] = rows; }
         got.push(SOURCES[key].name);
+        var kinds = [];
+        if (rows.some(function (r) { return isNum(r.temp); })) { kinds.push('気温'); }
+        if (rows.some(function (r) { return isNum(r.vh); })) { kinds.push('湿度'); }
+        if (rows.some(function (r) { return isNum(r.pop); })) { kinds.push('降水確率'); }
         setStatus(key, true, (s.label ? s.label + '／' : '') +
-          (rows.length ? rows.length + '時間ぶんの予報' : '現在値のみ') +
+          (rows.length ? rows.length + '時間ぶんの予報（' + kinds.join('・') + '）' : '現在値のみ') +
           (snap.generated_at ? '（取得 ' + fmtDateTime(new Date(snap.generated_at)) + '）' : ''));
       });
       setStatus('snapshot', got.length > 0, got.length

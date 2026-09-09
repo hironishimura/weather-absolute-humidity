@@ -118,7 +118,12 @@ ctx.loadAmedas(place).then(function (hit) {
 }).then(function () {
   ok('Yahoo の現在値', near(ctx.state.now.yahoo.values.temp, 24.5, 0.001));
   ok('Yahoo の絶対湿度', near(ctx.state.now.yahoo.values.vh, 15.0, 0.4), ctx.state.now.yahoo.values.vh.toFixed(2));
-  ok('Yahoo の時系列は欠測を除いて2点', ctx.state.future.yahoo.length === 2, ctx.state.future.yahoo.length);
+  ok('気温だけ・湿度だけの時刻も残す', ctx.state.future.yahoo.length === 3, ctx.state.future.yahoo.length);
+  ok('気温が欠けた時刻は絶対湿度を出さない',
+     ctx.state.future.yahoo[2].vh === undefined && ctx.state.future.yahoo[2].rh === 70,
+     JSON.stringify(ctx.state.future.yahoo[2]));
+  ok('気温と湿度がそろえば絶対湿度が出る', near(ctx.state.future.yahoo[0].vh, 14.7, 0.5),
+     ctx.state.future.yahoo[0].vh && ctx.state.future.yahoo[0].vh.toFixed(2));
   ok('ウェザーニュースは失敗として出る', ctx.state.status.find(s => s.key === 'weathernews').ok === false);
   ok('失敗の理由が伝わる', ctx.state.status.find(s => s.key === 'weathernews').msg.indexOf('作りが変わった') >= 0);
   ok('ウェザーニュースの予報は入らない', !ctx.state.future.weathernews);

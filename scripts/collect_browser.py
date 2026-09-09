@@ -39,11 +39,22 @@ def load_playwright():
         return None
 
 
+# 広告や計測は読み込まない。ページが「静か」にならず待てなくなるため。
+BLOCK_HOSTS = (
+    "googletagmanager", "google-analytics", "doubleclick", "googlesyndication",
+    "adservice", "amazon-adsystem", "criteo", "rubiconproject", "scorecardresearch",
+    "yieldmo", "taboola", "outbrain", "facebook.net", "connect.facebook",
+)
+BLOCK_TYPES = ("image", "media", "font")
+
+
 def render(sync_playwright, url, conf):
     """ページを開いて、描画が落ち着いてからHTMLを返す。"""
     wait_ms = int(conf.get("wait_ms", 4000))
     wait_for = conf.get("wait_for")
     scroll = bool(conf.get("scroll", True))
+    # networkidle は広告のせいで永久に来ないことがあるので既定にしない
+    wait_until = conf.get("wait_until", "domcontentloaded")
 
     with sync_playwright() as p:
         browser = p.chromium.launch()
@@ -54,7 +65,19 @@ def render(sync_playwright, url, conf):
                 viewport={"width": 1280, "height": 2000},
                 user_agent=collect.USER_AGENT,
             ).new_page()
-            page.goto(url, wait_until="networkidle", timeout=45000)
+
+            def gate(route):
+                r = route.request
+                if r.resource_type in BLOCK_TYPES or any(h in r.url for h in BLOCK_HOSTS):
+                    return route.abort()
+                return route.continue_()
+
+            page.route("**/*", gate)
+            page.goto(url, wait_until=wait_until, timeout=45000)
+            try:
+                page.wait_for_load_state("load", timeout=15000)
+            except Exception:                       # noqa: BLE001  待てなくても先へ進む
+                print("   （読み込み完了を待てませんでしたが、そのまま続けます）")
             if wait_for:
                 try:
                     page.wait_for_selector(wait_for, timeout=15000)
