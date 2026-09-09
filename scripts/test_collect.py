@@ -616,6 +616,17 @@ class 正解率(unittest.TestCase):
         rows, scores = verify.score("a", None, self.entries, {}, now=NOW_V, fetch=False)
         self.assertEqual(rows, [])
 
+    def test_予報のない期間は雨量を見に行かない(self):
+        calls = []
+        orig = verify.rain_mm
+        verify.rain_mm = lambda st, s, h: (calls.append(s), 0.0)[1]
+        try:
+            verify.score("a", "41277", self.entries, {}, now=NOW_V, fetch=True)
+        finally:
+            verify.rain_mm = orig
+        # 予報を入れた4期間だけ（半日の期間には予報がない）
+        self.assertEqual(len(calls), 4)
+
     def test_期間の中身(self):
         rows, _ = verify.score("a", None, self.entries, self.cache,
                                now=NOW_V, fetch=False)

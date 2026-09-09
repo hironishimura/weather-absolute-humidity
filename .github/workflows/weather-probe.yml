@@ -49,6 +49,32 @@ jobs:
               print('   ', r)
           PY
 
+      - name: Open-Meteo の降水確率を調べる
+        run: |
+          python3 - <<'PY'
+          import json, urllib.request
+          base = ('https://api.open-meteo.com/v1/forecast?latitude=36.5551&longitude=139.8828'
+                  '&hourly=temperature_2m,precipitation_probability'
+                  '&timezone=Asia%2FTokyo&forecast_days=10&past_days=1')
+          for label, url in (('models=jma_seamless', base + '&models=jma_seamless'),
+                             ('models なし', base),
+                             ('models=best_match', base + '&models=best_match'),
+                             ('models=jma_gsm', base + '&models=jma_gsm'),
+                             ('models=jma_msm', base + '&models=jma_msm')):
+              try:
+                  d = json.load(urllib.request.urlopen(url, timeout=20))
+              except Exception as e:
+                  print('%-22s 失敗 %s' % (label, e)); continue
+              h = d.get('hourly') or {}
+              keys = [k for k in h if k != 'time']
+              pp = h.get('precipitation_probability')
+              n = sum(1 for v in (pp or []) if v is not None)
+              print('%-22s 返ってきた項目 %s / 時刻 %d 個 / 降水確率の値 %d 個'
+                    % (label, keys, len(h.get('time') or []), n))
+              if n:
+                  print('    はじめの5つ', list(zip(h['time'][:5], pp[:5])))
+          PY
+
       - name: アメダスの雨量を見る
         run: |
           python3 - <<'PY'

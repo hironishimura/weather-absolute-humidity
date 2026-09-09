@@ -281,7 +281,7 @@ def rain_mm(station, start, hours):
     block = block - timedelta(hours=block.hour % 3)
     end = start + timedelta(hours=hours)
 
-    while block < end:
+    while block <= end:      # 終わりの時刻ちょうどの値は次のファイルに入っている
         name = "%04d%02d%02d_%02d" % (block.year, block.month, block.day, block.hour)
         try:
             data = get_json("%s/amedas/data/point/%s/%s.json" % (JMA, station, name))
@@ -332,6 +332,14 @@ def score(place_id, station, hist_entries, cache, now=None, fetch=True):
     now = now or datetime.now(JST)
     rows = []
     for start, hours in periods(now):
+        pops = {}
+        for src in ("jma", "model", "yahoo", "weathernews"):
+            p = pop_for(hist_entries, place_id, src, start, hours)
+            if p is not None:
+                pops[src] = p
+        if not pops:
+            continue                   # 予報が残っていない期間は雨量も見に行かない
+
         key = "%s|%d" % (start.isoformat(), hours)
         actual = cache.get(key)
         if actual is None and fetch and station:
@@ -342,14 +350,8 @@ def score(place_id, station, hist_entries, cache, now=None, fetch=True):
         if actual is None:
             continue
 
-        pops = {}
-        for src in ("jma", "model", "yahoo", "weathernews"):
-            p = pop_for(hist_entries, place_id, src, start, hours)
-            if p is not None:
-                pops[src] = p
-        if pops:
-            rows.append({"start": start.isoformat(), "hours": hours,
-                         "mm": actual["mm"], "rain": actual["rain"], "pops": pops})
+        rows.append({"start": start.isoformat(), "hours": hours,
+                     "mm": actual["mm"], "rain": actual["rain"], "pops": pops})
 
     scores = {}
     for src in ("jma", "model", "yahoo", "weathernews"):
