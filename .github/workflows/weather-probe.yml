@@ -12,13 +12,28 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with: { python-version: '3.12' }
-      - name: Yahoo の週間表
-        continue-on-error: true
-        run: python3 scripts/probe.py --weekly "https://weather.yahoo.co.jp/weather/jp/9/4110/9201.html"
+      - name: 読み取りの確認
+        run: python3 scripts/test_collect.py
+      - name: ページから取り込む
+        run: python3 scripts/collect.py
       - name: Playwright を入れる
         run: |
           python3 -m pip install --quiet playwright
           python3 -m playwright install --with-deps chromium
-      - name: WN の描画後（週間まわり）
-        continue-on-error: true
-        run: python3 scripts/collect_browser.py --dump --source weathernews
+      - name: ブラウザで取り込む
+        run: python3 scripts/collect_browser.py
+      - name: 結果を見る
+        run: |
+          python3 - <<'PY'
+          import json
+          d = json.load(open('docs/data/latest.json', encoding='utf-8'))
+          for k, v in d['sources'].items():
+              if not v.get('ok'):
+                  print('%-12s 失敗 %s' % (k, v.get('error'))); continue
+              h = v.get('hourly') or []; w = v.get('weekly') or []
+              print('%-12s %-26s 時系列 %d点  週間 %d日' % (k, v.get('strategy'), len(h), len(w)))
+              for r in w[:8]:
+                  print('              %s' % r)
+              if h:
+                  print('              時系列の範囲: %s 〜 %s' % (h[0]['time'][:16], h[-1]['time'][:16]))
+          PY

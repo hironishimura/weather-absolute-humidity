@@ -275,6 +275,53 @@ WN_TEXT = """最新見解
 """
 
 
+WEEK_HTML = """
+<table>
+ <tr><td>日付</td><td>9月11日 (金)</td><td>9月12日 (土)</td><td>9月13日 (日)</td></tr>
+ <tr><td>天気</td><td>くもり</td><td>雨</td><td>晴れ</td></tr>
+ <tr><td>気温（℃）</td><td>28 19</td><td>26 20</td><td>29</td></tr>
+ <tr><td>降水 確率（％）</td><td>40</td><td>70</td><td>---</td></tr>
+</table>
+"""
+
+
+class 週間予報の読み取り(unittest.TestCase):
+
+    def test_日付と気温と降水確率(self):
+        got = collect.weekly_from_html(WEEK_HTML, NOW)
+        self.assertEqual(len(got), 3)
+        self.assertEqual(got[0]["date"], "2026-09-11")
+        self.assertEqual(got[0]["weather"], "くもり")
+        self.assertEqual(got[0]["temp_max"], 28.0)
+        self.assertEqual(got[0]["temp_min"], 19.0)
+        self.assertEqual(got[0]["pop"], 40.0)
+
+    def test_片方しかない気温(self):
+        got = collect.weekly_from_html(WEEK_HTML, NOW)
+        self.assertEqual(got[2]["temp_max"], 29.0)
+        self.assertNotIn("temp_min", got[2])
+
+    def test_読めない降水確率は入れない(self):
+        got = collect.weekly_from_html(WEEK_HTML, NOW)
+        self.assertNotIn("pop", got[2])
+
+    def test_年をまたぐ(self):
+        html = WEEK_HTML.replace("9月11日 (金)", "1月5日 (月)")
+        got = collect.weekly_from_html(html, datetime(2026, 12, 28, 12, 0, tzinfo=JST))
+        self.assertEqual(got[0]["date"], "2027-01-05")
+
+    def test_日付の行がなければ空(self):
+        html = WEEK_HTML.replace("日付", "見出し")
+        self.assertEqual(collect.weekly_from_html(html, NOW), [])
+
+    def test_結果に入る(self):
+        r = collect.collect_one("yahoo", {"enabled": True, "url": "http://example.test/"},
+                                html=WEEK_HTML, now=NOW)
+        self.assertTrue(r["ok"])
+        self.assertEqual(len(r["weekly"]), 3)
+        self.assertIn("週間", r["strategy"])
+
+
 class 画面テキストからの読み取り(unittest.TestCase):
 
     def test_時刻と気温を拾う(self):
