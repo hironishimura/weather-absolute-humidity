@@ -154,58 +154,62 @@ def main():
     with open(SETTINGS, encoding="utf-8") as f:
         settings = json.load(f)
 
-    targets = []
-    for name, conf in (settings.get("sources") or {}).items():
-        if args.source and name != args.source:
-            continue
-        b = conf.get("browser") or {}
-        if not b.get("enabled"):
-            print("%-12s ブラウザでの取り込みは無効です" % name)
-            continue
-        if not conf.get("url"):
-            continue
-        targets.append((name, conf, b))
+    results = {}          # 地点id → {提供元名: 結果}
+    found = False
 
-    if not targets:
+    for place in collect.places_of(settings):
+        pid = place.get("id", "default")
+        for name, conf in (place.get("sources") or {}).items():
+            if args.source and name != args.source:
+                continue
+            b = conf.get("browser") or {}
+            if not b.get("enabled"):
+                continue
+            if not conf.get("url"):
+                continue
+            found = True
+
+            print("%-12s [%s] 開いています… %s" % (name, pid, conf["url"]))
+            try:
+                rendered = render(sync_playwright, conf["url"], b)
+            except Exception as e:              # noqa: BLE001  何が起きても続ける
+                print("%-12s 開けませんでした（%s: %s）" % (name, type(e).__name__, e))
+                continue
+
+            html = rendered["html"]
+            if args.dump:
+                dump(html, name)
+                dump_text(rendered.get("text"), ["週間予報", "週間", "日(木)", "降水確率"])
+                continue
+
+            r = collect.collect_one(name, dict(conf, enabled=True), html=html)
+            r = add_hourly(r, collect.hourly_from_text(rendered.get("text")), conf)
+
+            # 週間予報が別ページにあり、そこも描画しないと読めない場合
+            wk_url = conf.get("weekly_url")
+            if wk_url and not r.get("weekly"):
+                print("%-12s 週間のページも開いています… %s" % (name, wk_url))
+                try:
+                    wk = render(sync_playwright, wk_url, b)
+                    weekly = collect.weekly_from_html(wk["html"])
+                    if weekly:
+                        r["weekly"] = weekly
+                        r["strategy"] = (r.get("strategy", "") + "＋週間")
+                        print("%-12s 週間 %d日ぶん読めました" % (name, len(weekly)))
+                    else:
+                        print("%-12s 週間のページからは読み取れませんでした" % name)
+                except Exception as e:          # noqa: BLE001
+                    print("%-12s 週間のページを開けませんでした（%s）" % (name, type(e).__name__))
+
+            if r.get("ok"):
+                print("%-12s 読めました（%s・%d時間ぶん）" % (name, r.get("strategy"), len(r.get("hourly", []))))
+                results.setdefault(pid, {})[name] = r
+            else:
+                print("%-12s 読めませんでした（%s）" % (name, r.get("error")))
+
+    if not found:
         print("ブラウザで取り込む対象がありません。")
         return 0
-
-    results = {}
-    for name, conf, b in targets:
-        print("%-12s 開いています… %s" % (name, conf["url"]))
-        try:
-            rendered = render(sync_playwright, conf["url"], b)
-        except Exception as e:                      # noqa: BLE001  何が起きても続ける
-            print("%-12s 開けませんでした（%s: %s）" % (name, type(e).__name__, e))
-            continue
-        html = rendered["html"]
-        if args.dump:
-            dump(html, name)
-            dump_text(rendered.get("text"), ["週間予報", "週間", "日(木)", "降水確率"])
-            continue
-        r = collect.collect_one(name, dict(conf, enabled=True), html=html)
-        r = add_hourly(r, collect.hourly_from_text(rendered.get("text")), conf)
-
-        # 週間予報が別ページにあり、そこも描画しないと読めない場合
-        wk_url = conf.get("weekly_url")
-        if wk_url and not r.get("weekly"):
-            print("%-12s 週間のページも開いています… %s" % (name, wk_url))
-            try:
-                wk = render(sync_playwright, wk_url, b)
-                weekly = collect.weekly_from_html(wk["html"])
-                if weekly:
-                    r["weekly"] = weekly
-                    r["strategy"] = (r.get("strategy", "") + "＋週間")
-                    print("%-12s 週間 %d日ぶん読めました" % (name, len(weekly)))
-                else:
-                    print("%-12s 週間のページからは読み取れませんでした" % name)
-            except Exception as e:              # noqa: BLE001
-                print("%-12s 週間のページを開けませんでした（%s）" % (name, type(e).__name__))
-        if r.get("ok"):
-            print("%-12s 読めました（%s・%d時間ぶん）" % (name, r.get("strategy"), len(r.get("hourly", []))))
-            results[name] = r
-        else:
-            print("%-12s 読めませんでした（%s）" % (name, r.get("error")))
 
     if args.dump or not results:
         return 0
@@ -279,14 +283,22 @@ def merge(settings, results):
     with open(path, encoding="utf-8") as f:
         data = json.load(f)
 
+    by_id = {}
+    for pl in (data.get("places") or []):
+        by_id[pl.get("id", "default")] = pl
+
     changed = []
-    for name, r in results.items():
-        old = (data.get("sources") or {}).get(name) or {}
-        better = pick_better(old, r)
-        if better:
-            data.setdefault("sources", {})[name] = better
-            changed.append("%s %d→%d時間" % (name, len(old.get("hourly") or []),
-                                            len(better.get("hourly") or [])))
+    for pid, per_source in results.items():
+        place = by_id.get(pid)
+        if place is None:
+            continue
+        for name, r in per_source.items():
+            old = (place.get("sources") or {}).get(name) or {}
+            better = pick_better(old, r)
+            if better:
+                place.setdefault("sources", {})[name] = better
+                changed.append("%s/%s %d→%d時間" % (pid, name, len(old.get("hourly") or []),
+                                                    len(better.get("hourly") or [])))
 
     if not changed:
         print("増えるものがなかったので、そのままにします。")

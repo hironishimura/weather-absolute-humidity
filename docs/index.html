@@ -35,9 +35,14 @@
     <p class="place__eyebrow">いま、この場所の空気</p>
     <p class="place__now" id="place-name">地点を取得しています…</p>
     <p class="place__sub" id="place-sub">&nbsp;</p>
-    <details class="place__edit">
-      <summary>緯度・経度から地点を指定する</summary>
+
+    <div class="chips" id="place-chips" role="group" aria-label="登録した地点"></div>
+
+    <details class="place__edit" id="place-edit">
+      <summary>地点を追加・編集する</summary>
       <div class="place__form">
+        <label class="field field--wide"><span>名前</span>
+          <input type="text" id="in-name" maxlength="24" placeholder="宇都宮 事務所"></label>
         <label class="field"><span>緯度</span>
           <input type="number" id="in-lat" step="0.0001" inputmode="decimal" placeholder="36.5551"></label>
         <label class="field"><span>経度</span>
@@ -45,10 +50,13 @@
         <label class="field field--wide"><span>予報区（気象庁）</span>
           <select id="in-office"><option value="">自動</option></select></label>
         <div class="place__btns">
-          <button type="button" id="btn-apply" class="btn">この地点にする</button>
-          <button type="button" id="btn-default" class="btn btn--ghost">宇都宮に戻す</button>
+          <button type="button" id="btn-save" class="btn">この地点を書き換える</button>
+          <button type="button" id="btn-add" class="btn btn--ghost">新しい地点として追加</button>
+          <button type="button" id="btn-here" class="btn btn--ghost">現在地を入れる</button>
+          <button type="button" id="btn-delete" class="btn btn--danger">この地点を削除</button>
         </div>
-        <p class="note">緯度・経度は小数（度）で入れてください。予報区を「自動」にすると緯度・経度から選びます。</p>
+        <p class="note">緯度・経度は小数（度）で入れてください。地図アプリで長押しすると出てきます。
+        予報区を「自動」にすると緯度・経度から選びます。登録した地点はこの端末のブラウザに保存されます。</p>
       </div>
     </details>
   </section>
