@@ -220,6 +220,31 @@ table{ border-collapse:collapse; width:100%; font-size:.8125rem; }
 .weekly .w-none{ color:var(--text-mute); font-size:.8125rem; }
 .wk-dot{ display:inline-block; width:8px; height:8px; border-radius:50%; margin-right:6px; vertical-align:middle; }
 
+/* ---------- 降水確率の当たり具合 ---------- */
+.acc{ display:grid; grid-template-columns:repeat(4,1fr); gap:14px; margin-top:16px; }
+@media (max-width:1000px){ .acc{ grid-template-columns:1fr 1fr; } }
+@media (max-width:520px){ .acc{ grid-template-columns:1fr; } }
+.acc__card{
+  background:var(--card); border:1px solid var(--line); border-radius:var(--r);
+  padding:16px; border-top:3px solid var(--dot,var(--line));
+}
+.acc__name{ font-size:.8125rem; font-weight:700; letter-spacing:.04em; }
+.acc__rate{ font-family:var(--mono); font-size:2rem; font-weight:600; line-height:1.15; margin-top:8px; }
+.acc__rate span{ font-size:.75rem; font-weight:400; color:var(--text-mute); margin-left:3px; }
+.acc__rate.is-none{ font-size:.875rem; color:var(--text-mute); font-weight:400; }
+.acc__bar{ height:6px; border-radius:999px; background:var(--line-soft); overflow:hidden; margin-top:10px; }
+.acc__bar i{ display:block; height:100%; background:var(--dot,var(--accent)); border-radius:999px; }
+.acc__meta{ font-size:.75rem; color:var(--text-mute); margin-top:8px; line-height:1.7; }
+.acc__detail{ margin-top:16px; }
+.acc__detail summary{ font-size:.8125rem; color:var(--accent); cursor:pointer; }
+.weekly--acc .a-when{ white-space:nowrap; font-family:var(--mono); font-size:.75rem; color:var(--text-mid); width:9.5em; }
+.weekly--acc .a-mm{ white-space:nowrap; font-family:var(--mono); font-size:.8125rem; width:6em; }
+.weekly--acc .a-mm.is-rain{ color:var(--accent); font-weight:700; }
+.weekly--acc .a-pop{ white-space:nowrap; font-family:var(--mono); font-size:.8125rem; }
+.weekly--acc .a-pop.is-hit{ color:var(--ok); font-weight:700; }
+.weekly--acc .a-pop.is-miss{ color:var(--warn); }
+.weekly--acc .a-none{ color:var(--text-mute); }
+
 .daily th,.daily td{ border-bottom:1px solid var(--line-soft); padding:11px 10px; text-align:left; vertical-align:middle; }
 .daily tr:last-child td{ border-bottom:0; }
 .daily .d-date{ white-space:nowrap; font-family:var(--mono); font-size:.75rem; color:var(--text-mute); width:6em; }

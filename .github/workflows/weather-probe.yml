@@ -16,23 +16,56 @@ jobs:
         run: python3 scripts/test_collect.py
       - name: ページから取り込む
         run: python3 scripts/collect.py
-      - name: Playwright を入れる
-        run: |
-          python3 -m pip install --quiet playwright
-          python3 -m playwright install --with-deps chromium
-      - name: ブラウザで取り込む
-        run: python3 scripts/collect_browser.py
-      - name: 結果を見る
+      - name: 取り込んだ中身を見る
         run: |
           python3 - <<'PY'
           import json
           d = json.load(open('docs/data/latest.json', encoding='utf-8'))
-          for k, v in d['sources'].items():
-              if not v.get('ok'):
-                  print('%-12s 失敗 %s' % (k, v.get('error'))); continue
-              print('%-12s %s' % (k, v.get('strategy')))
-              print('   時系列 %d点  週間 %d日  降水確率 %d区間'
-                    % (len(v.get('hourly') or []), len(v.get('weekly') or []), len(v.get('pops') or [])))
-              for r in (v.get('pops') or [])[:6]:
-                  print('     %s' % r)
+          for place in d.get('places', []):
+              print('== %s' % place.get('label'))
+              for k, v in (place.get('sources') or {}).items():
+                  if not v.get('ok'):
+                      print('%-12s 失敗 %s' % (k, v.get('error'))); continue
+                  print('%-12s %s' % (k, v.get('strategy')))
+                  print('   時系列 %d点  週間 %d日  降水確率 %d区間'
+                        % (len(v.get('hourly') or []), len(v.get('weekly') or []), len(v.get('pops') or [])))
           PY
+
+      - name: 気象庁とOpen-Meteoの降水確率を見る
+        run: |
+          python3 - <<'PY'
+          import sys
+          sys.path.insert(0, 'scripts')
+          import verify
+          place = {'id': 'utsunomiya', 'lat': 36.5551, 'lon': 139.8828}
+          print('予報区 =', verify.resolve_office(place['lat'], place['lon']))
+          j = verify.jma_pops(place)
+          print('気象庁 %d区間' % len(j))
+          for r in j[:12]:
+              print('   ', r)
+          m = verify.model_pops(place)
+          print('MSM/GSM %d区間' % len(m))
+          for r in m[:6]:
+              print('   ', r)
+          PY
+
+      - name: アメダスの雨量を見る
+        run: |
+          python3 - <<'PY'
+          import sys
+          from datetime import datetime, timedelta
+          sys.path.insert(0, 'scripts')
+          import verify
+          done = verify.periods()
+          print('照合する期間 %d 個' % len(done))
+          for s, h in done:
+              print('   ', s.isoformat(), '%d時間' % h)
+          print('近い観測所 =', verify.nearest_stations(36.5551, 139.8828))
+          code, name = verify.pick_station(36.5551, 139.8828, done[-1][0], done[-1][1])
+          print('選んだ観測所 =', code, name)
+          for s, h in done:
+              print('   %s %2d時間  %s mm' % (s.isoformat(), h, verify.rain_mm(code, s, h)))
+          PY
+
+      - name: 通しで動かす
+        run: python3 scripts/verify.py

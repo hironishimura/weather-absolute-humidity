@@ -15,6 +15,7 @@
 var JMA = 'https://www.jma.go.jp/bosai';
 var OPEN_METEO = 'https://api.open-meteo.com/v1/forecast';
 var SNAPSHOT = './data/latest.json';
+var ACCURACY = './data/accuracy.json';
 
 var DEFAULT_PLACE = { lat: 36.5551, lon: 139.8828, label: '栃木県宇都宮市' };
 var STORE_KEY = 'dc-weather-places';
@@ -300,6 +301,7 @@ var state = {
   status: [],
   chartDays: 2,
   surface: 10,
+  accuracy: null,     /* 降水確率の当たり具合（accuracy.json） */
   colors: {}          /* 提供元ごとの色（変えたものだけ） */
 };
 
@@ -776,6 +778,145 @@ function loadSnapshot() {
       setStatus('snapshot', null,
         'data/latest.json がありません。scripts/weather/collect.py を動かすと取り込めます');
     });
+}
+
+/* ---------------------------------------------------------
+   降水確率の当たり具合（accuracy.json）
+   ---------------------------------------------------------
+   scripts/verify.py が、予報の降水確率と気象庁アメダスの
+   実際の雨量をつき合わせて書き出したものを読みます。
+   過去の予報はあとから取り寄せられないので、
+   取り込みを動かしはじめてから数字がそろっていきます。
+   --------------------------------------------------------- */
+function pickAccuracyPlace(acc, place) {
+  var list = acc && acc.places;
+  if (!list || !list.length) { return null; }
+  var byId = null, nearest = null;
+  list.forEach(function (p) {
+    if (place && p.id === place.id) { byId = p; }
+    if (!isNum(p.lat) || !isNum(p.lon) || !place) { return; }
+    var km = distanceKm(place.lat, place.lon, p.lat, p.lon);
+    if (!nearest || km < nearest.km) { nearest = { km: km, place: p }; }
+  });
+  if (byId) { return { place: byId, km: 0 }; }
+  if (nearest && nearest.km <= 40) { return nearest; }
+  return null;
+}
+
+function loadAccuracy() {
+  return getJSON(ACCURACY, { timeout: 6000 })
+    .then(function (acc) {
+      var hit = pickAccuracyPlace(acc, state.place);
+      state.accuracy = hit ? { meta: acc, place: hit.place, km: hit.km } : { meta: acc, place: null };
+    })
+    .catch(function () { state.accuracy = null; });
+}
+
+/* 期間の書き方。24時間なら「9/2」、12時間なら「9/6 午前」 */
+function periodText(start, hours) {
+  var d = new Date(start);
+  if (isNaN(d.getTime())) { return '--'; }
+  if (hours >= 24) { return fmtDate(d); }
+  var j = new Date(d.getTime() + 9 * 3600e3);
+  return fmtDateShort(d) + ' ' + (j.getUTCHours() < 12 ? '午前' : '午後');
+}
+
+function renderAccuracy() {
+  var box = $('acc-cards');
+  var body = $('acc-body');
+  if (!box || !body) { return; }
+  box.innerHTML = '';
+  body.innerHTML = '';
+
+  Array.prototype.forEach.call(document.querySelectorAll('.weekly--acc .wk-dot'), function (dot) {
+    var k = dot.getAttribute('data-src');
+    if (SOURCES[k]) { dot.style.background = colorOf(k); }
+  });
+
+  var acc = state.accuracy;
+  if (!acc) {
+    $('acc-lead').textContent = 'まだ集計ファイルがありません。';
+    $('acc-note').textContent =
+      'scripts/verify.py（GitHub Actions の取り込みに入っています）が動くと ' +
+      'data/accuracy.json ができ、ここに数字が出ます。';
+    body.appendChild(emptyRow(6, '—'));
+    return;
+  }
+
+  var meta = acc.meta || {};
+  var place = acc.place;
+  var rows = (place && place.periods) || [];
+  var scores = (place && place.scores) || {};
+
+  if (!place) {
+    $('acc-lead').textContent = 'この地点の集計はまだありません。';
+  } else {
+    $('acc-lead').textContent =
+      (place.label || '') +
+      (place.station ? '（実際の雨量はアメダス' + place.station + '観測所）' : '') +
+      (meta.updated_at ? '／集計 ' + fmtDateTime(new Date(meta.updated_at)) : '');
+  }
+
+  ['jma', 'model', 'yahoo', 'weathernews'].forEach(function (k) {
+    var sc = scores[k];
+    var card = el('div', 'acc__card');
+    card.style.setProperty('--dot', colorOf(k));
+    card.appendChild(el('p', 'acc__name', SOURCES[k].name));
+    if (!sc) {
+      card.appendChild(el('p', 'acc__rate is-none', 'まだ数えられません'));
+      card.appendChild(el('p', 'acc__meta', '終わった期間の予報がまだ足りません。'));
+    } else {
+      var rate = el('p', 'acc__rate', fix(sc.rate, 1));
+      rate.appendChild(el('span', null, '%'));
+      card.appendChild(rate);
+      var bar = el('div', 'acc__bar');
+      var fill = el('i');
+      fill.style.width = Math.max(0, Math.min(100, sc.rate)) + '%';
+      bar.appendChild(fill);
+      card.appendChild(bar);
+      card.appendChild(el('p', 'acc__meta',
+        sc.n + '期間のうち' + sc.hit + '回あたり／ブライアスコア ' + fix(sc.brier, 3)));
+    }
+    box.appendChild(card);
+  });
+
+  if (!rows.length) {
+    body.appendChild(emptyRow(6, '照合できた期間がまだありません。'));
+  } else {
+    rows.slice().reverse().forEach(function (r) {
+      var tr = el('tr');
+      tr.appendChild(el('td', 'a-when', periodText(r.start, r.hours)));
+      var mm = el('td', 'a-mm' + (r.rain ? ' is-rain' : ''), fix(r.mm, 1) + ' mm');
+      tr.appendChild(mm);
+      ['jma', 'model', 'yahoo', 'weathernews'].forEach(function (k) {
+        var p = r.pops[k];
+        if (!isNum(p)) { tr.appendChild(el('td', 'a-pop a-none', '—')); return; }
+        var said = p >= (isNum(meta.say_rain) ? meta.say_rain : 50);
+        var ok = said === !!r.rain;
+        tr.appendChild(el('td', 'a-pop ' + (ok ? 'is-hit' : 'is-miss'),
+          p + '%' + (ok ? ' ○' : ' ×')));
+      });
+      body.appendChild(tr);
+    });
+  }
+
+  var mmLimit = isNum(meta.rain_mm) ? meta.rain_mm : 1;
+  var sayLimit = isNum(meta.say_rain) ? meta.say_rain : 50;
+  $('acc-note').textContent =
+    '7日前〜4日前は1日ごと、直近3日は半日ごと（午前・午後）に数えています。' +
+    '実際に降ったかどうかは気象庁アメダスの雨量が' + mmLimit + 'mm以上かどうか、' +
+    '予報は降水確率' + sayLimit + '%以上を「降る予報」とみなしています。' +
+    'ブライアスコアは確率そのもののずれで、0に近いほど的確です。' +
+    'その期間が始まる前の最後の予報を使います。' +
+    '過去の予報はあとから取り寄せられないため、取り込みを続けるほど数がそろいます。';
+}
+
+function emptyRow(span, text) {
+  var tr = el('tr');
+  var td = el('td', 'empty', text);
+  td.colSpan = span;
+  tr.appendChild(td);
+  return tr;
 }
 
 /* ---------------------------------------------------------
@@ -1488,6 +1629,7 @@ function renderColorPickers() {
       renderSources();
       renderChart();
       renderWeekly();
+      renderAccuracy();
     });
     var hex = el('span', 'hex', input.value.toUpperCase());
     input.addEventListener('input', function () { hex.textContent = this.value.toUpperCase(); });
@@ -1505,6 +1647,7 @@ function resetColors() {
   renderSources();
   renderChart();
   renderWeekly();
+  renderAccuracy();
 }
 
 function renderAll() {
@@ -1513,6 +1656,7 @@ function renderAll() {
   renderSources();
   renderChart();
   renderWeekly();
+  renderAccuracy();
   renderStatus();
   renderColorPickers();
 }
@@ -1649,6 +1793,7 @@ function refresh() {
   state.popBlocks = {};
   state.status = [];
   state.station = null;
+  state.accuracy = null;
   renderStatus();
 
   return loadAreas()
@@ -1660,7 +1805,8 @@ function refresh() {
       var jobs = [
         loadForecast(state.place),
         loadModel(state.place),
-        loadSnapshot()
+        loadSnapshot(),
+        loadAccuracy()
       ];
       if (hit) {
         jobs.push(loadAmedasPast(hit.station.code, hit.obsTime).catch(function () { return null; }));

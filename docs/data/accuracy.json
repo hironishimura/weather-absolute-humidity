@@ -1,0 +1,19 @@
+{
+  "updated_at": "2026-09-09T20:11:48.915167+09:00",
+  "rain_mm": 1.0,
+  "say_rain": 50.0,
+  "places": [
+    {
+      "id": "utsunomiya",
+      "label": "栃木県宇都宮市",
+      "lat": 36.5551,
+      "lon": 139.8828,
+      "station": null,
+      "periods": [],
+      "scores": {}
+    }
+  ],
+  "actuals": {
+    "utsunomiya": {}
+  }
+}
