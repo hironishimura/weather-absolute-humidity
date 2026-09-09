@@ -7,6 +7,9 @@
 import Foundation
 import Observation
 
+/// 保存するときのキー。置き場所の側からも使うので、クラスの外に出しています。
+public let settingsStorageKey = "dc-weather-settings"
+
 /// 保存する中身。まるごと JSON にして置きます。
 public struct SettingsData: Codable, Equatable, Sendable {
     public var places: [Place]
@@ -60,7 +63,7 @@ public final class UserDefaultsBackend: SettingsBackend {
     public var isCloud: Bool { false }
     public var onExternalChange: (() -> Void)?
 
-    public init(defaults: UserDefaults = .standard, key: String = SettingsStore.storageKey) {
+    public init(defaults: UserDefaults = .standard, key: String = settingsStorageKey) {
         self.defaults = defaults
         self.key = key
     }
@@ -80,7 +83,7 @@ public final class CloudBackend: SettingsBackend {
     /// iCloud にサインインしていて、権限もあるとき true
     public var isCloud: Bool { FileManager.default.ubiquityIdentityToken != nil }
 
-    public init(key: String = SettingsStore.storageKey) {
+    public init(key: String = settingsStorageKey) {
         self.key = key
         observer = NotificationCenter.default.addObserver(
             forName: NSUbiquitousKeyValueStore.didChangeExternallyNotification,
@@ -116,8 +119,6 @@ public final class CloudBackend: SettingsBackend {
 @MainActor
 @Observable
 public final class SettingsStore {
-    public static let storageKey = "dc-weather-settings"
-
     public private(set) var data: SettingsData
     /// iCloud で同期できているか
     public private(set) var usingCloud: Bool
@@ -193,7 +194,15 @@ public final class SettingsStore {
 
     public func move(from source: IndexSet, to destination: Int) {
         var v = data
-        v.places.move(fromOffsets: source, toOffset: destination)
+        let picked = source.sorted().compactMap { v.places.indices.contains($0) ? v.places[$0] : nil }
+        guard !picked.isEmpty else { return }
+        // 抜いた数だけ行き先がずれるので、先に数えておきます
+        let before = source.filter { $0 < destination }.count
+        for i in source.sorted(by: >) where v.places.indices.contains(i) {
+            v.places.remove(at: i)
+        }
+        let at = min(max(destination - before, 0), v.places.count)
+        v.places.insert(contentsOf: picked, at: at)
         save(v)
     }
 
