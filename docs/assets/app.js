@@ -228,6 +228,11 @@ function fmtDateTime(d) {
     month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Tokyo'
   }).format(d);
 }
+function fmtDateShort(d) {
+  if (!d) { return '--'; }
+  var j = new Date(d.getTime() + 9 * 3600e3);
+  return (j.getUTCMonth() + 1) + '/' + j.getUTCDate();
+}
 function fmtDate(d) {
   if (!d) { return '--'; }
   return new Intl.DateTimeFormat('ja-JP', {
@@ -836,82 +841,167 @@ function svgEl(name, attrs) {
   return e;
 }
 
-function niceTicks(min, max) {
-  if (!isNum(min) || !isNum(max)) { return [0, 1]; }
-  if (max - min < 0.5) { max = min + 0.5; }
-  var mid = (min + max) / 2;
-  return [max, mid, min];
+/* 目盛りをキリのよい数字にする */
+function niceStep(range, want) {
+  var raw = (range || 1) / (want || 3);
+  var mag = Math.pow(10, Math.floor(Math.log(raw) / Math.LN10));
+  var n = raw / mag;
+  var step = n <= 1 ? 1 : (n <= 2 ? 2 : (n <= 2.5 ? 2.5 : (n <= 5 ? 5 : 10)));
+  return step * mag;
 }
 
-function lineChart(title, unit, series, xMin, xMax, digits, fixedRange, W) {
-  /* 画面の実寸で描く。そうしないと文字が幅にあわせて伸び縮みして読みにくい */
-  var H = 150, PL = 46, PR = 14, PT = 14, PB = 26;
-  W = W || 720;
+function niceScale(min, max, want) {
+  if (!isNum(min) || !isNum(max)) { return { min: 0, max: 1, ticks: [0, 1] }; }
+  if (max - min < 1e-6) { max = min + 1; }
+  var step = niceStep(max - min, want);
+  var lo = Math.floor(min / step) * step;
+  var hi = Math.ceil(max / step) * step;
+  var ticks = [];
+  for (var v = lo; v <= hi + step * 1e-6; v += step) {
+    ticks.push(Math.round(v * 1e6) / 1e6);
+  }
+  return { min: lo, max: hi, ticks: ticks };
+}
+
+/* 表示範囲に入る「日」を並べる */
+function daysInRange(xMin, xMax) {
+  var out = [];
+  var j = new Date(xMin + 9 * 3600e3);
+  j.setUTCHours(0, 0, 0, 0);
+  var t = j.getTime() - 9 * 3600e3;
+  for (var i = 0; i < 20 && t < xMax; i++) {
+    var next = t + 24 * 3600e3;
+    if (next > xMin) {
+      out.push({ t0: t, t1: next, key: jstKey(new Date(t + 3600e3)), date: new Date(t) });
+    }
+    t = next;
+  }
+  return out;
+}
+
+/* 折れ線を1枚描く */
+function lineChart(o) {
+  var W = o.width || 720;
+  var H = o.height || 150;
+  var PL = 46, PR = 14, PT = o.padTop || 14, PB = 42;
+
   var wrap = el('div', 'chart');
-  wrap.appendChild(el('p', 'chart__t', title + '（' + unit + '）'));
+  wrap.appendChild(el('p', 'chart__t', o.title + '（' + o.unit + '）'));
 
   var min = Infinity, max = -Infinity;
-  series.forEach(function (s) {
+  o.series.forEach(function (s) {
     s.points.forEach(function (p) {
       if (p.v < min) { min = p.v; }
       if (p.v > max) { max = p.v; }
     });
   });
+  (o.marks || []).forEach(function (m) {
+    if (isNum(m.max)) { max = Math.max(max, m.max); min = Math.min(min, m.max); }
+    if (isNum(m.min)) { min = Math.min(min, m.min); max = Math.max(max, m.min); }
+  });
   if (!isFinite(min) || !isFinite(max)) {
     wrap.appendChild(el('p', 'empty', 'データがありません'));
     return wrap;
   }
-  var pad;
-  if (fixedRange) {
-    min = fixedRange[0]; max = fixedRange[1]; pad = 0;
-  } else {
-    pad = Math.max((max - min) * 0.12, 0.3);
-    min -= pad; max += pad;
-  }
 
-  var svg = svgEl('svg', { viewBox: '0 0 ' + W + ' ' + H, role: 'img', 'aria-label': title });
-  function x(t) { return PL + ((t - xMin) / (xMax - xMin)) * (W - PL - PR); }
-  function y(v) { return PT + (1 - (v - min) / (max - min)) * (H - PT - PB); }
+  var sc = o.range ? { min: o.range[0], max: o.range[1],
+                       ticks: [o.range[0], (o.range[0] + o.range[1]) / 2, o.range[1]] }
+                   : niceScale(min, max, 3);
+
+  var svg = svgEl('svg', { viewBox: '0 0 ' + W + ' ' + H, role: 'img', 'aria-label': o.title });
+  function x(t) { return PL + ((t - o.xMin) / (o.xMax - o.xMin)) * (W - PL - PR); }
+  function y(v) { return PT + (1 - (v - sc.min) / (sc.max - sc.min)) * (H - PT - PB); }
 
   /* 横の目盛り */
-  (fixedRange ? [max, (min + max) / 2, min] : niceTicks(min + pad, max - pad)).forEach(function (v) {
+  sc.ticks.forEach(function (v) {
     svg.appendChild(svgEl('line', { class: 'grid', x1: PL, x2: W - PR, y1: y(v), y2: y(v) }));
-    var tx = svgEl('text', { class: 'axis', x: PL - 10, y: y(v) + 6, 'text-anchor': 'end' });
-    tx.textContent = v.toFixed(digits);
+    var tx = svgEl('text', { class: 'axis', x: PL - 8, y: y(v) + 4, 'text-anchor': 'end' });
+    tx.textContent = v.toFixed(o.digits);
     svg.appendChild(tx);
   });
 
-  /* 時刻の目盛り */
-  var span = (xMax - xMin) / 3600e3;
-  var stepH = span > 72 ? 24 : (span > 40 ? 12 : (span > 20 ? 6 : 3));
-  /* 幅が狭いときは目盛りを間引く（ラベルが重ならないように） */
-  while ((W - PL - PR) / (span / stepH) < 46) { stepH *= 2; }
-  var cur = new Date(xMin);
-  var jst = new Date(cur.getTime() + 9 * 3600e3);
-  jst.setUTCMinutes(0, 0, 0);
-  while (jst.getUTCHours() % stepH !== 0) { jst.setTime(jst.getTime() + 3600e3); }
-  for (var t = jst.getTime() - 9 * 3600e3; t <= xMax; t += stepH * 3600e3) {
-    if (t < xMin) { continue; }
-    svg.appendChild(svgEl('line', { class: 'grid', x1: x(t), x2: x(t), y1: PT, y2: H - PB, opacity: '.5' }));
-    var lb = svgEl('text', { class: 'axis', x: x(t), y: H - 8, 'text-anchor': 'middle' });
-    lb.textContent = new Date(t + 9 * 3600e3).getUTCHours() + '時';
+  /* 日の区切りと日付 */
+  var days = daysInRange(o.xMin, o.xMax);
+  days.forEach(function (d) {
+    if (d.t0 > o.xMin) {
+      svg.appendChild(svgEl('line', {
+        class: 'day-line', x1: x(d.t0), x2: x(d.t0), y1: PT, y2: H - PB + 16
+      }));
+    }
+    var mid = (Math.max(d.t0, o.xMin) + Math.min(d.t1, o.xMax)) / 2;
+    var wide = x(Math.min(d.t1, o.xMax)) - x(Math.max(d.t0, o.xMin));
+    if (wide < 26) { return; }
+    var lb = svgEl('text', { class: 'axis axis--day', x: x(mid), y: H - 6, 'text-anchor': 'middle' });
+    /* 幅が足りないときは曜日を落とす */
+    lb.textContent = wide >= 62 ? fmtDate(d.date) : fmtDateShort(d.date);
     svg.appendChild(lb);
+  });
+
+  /* 時刻の目盛り */
+  var span = (o.xMax - o.xMin) / 3600e3;
+  var stepH = span > 100 ? 24 : (span > 72 ? 12 : (span > 40 ? 12 : (span > 20 ? 6 : 3)));
+  while ((W - PL - PR) / (span / stepH) < 42) { stepH *= 2; }
+  var j0 = new Date(o.xMin + 9 * 3600e3);
+  j0.setUTCMinutes(0, 0, 0);
+  while (j0.getUTCHours() % stepH !== 0) { j0.setTime(j0.getTime() + 3600e3); }
+  for (var t = j0.getTime() - 9 * 3600e3; t <= o.xMax; t += stepH * 3600e3) {
+    if (t < o.xMin) { continue; }
+    var hh = new Date(t + 9 * 3600e3).getUTCHours();
+    if (hh !== 0) {
+      svg.appendChild(svgEl('line', { class: 'grid', x1: x(t), x2: x(t), y1: PT, y2: H - PB, opacity: '.6' }));
+    }
+    var lb2 = svgEl('text', { class: 'axis', x: x(t), y: H - PB + 14, 'text-anchor': 'middle' });
+    lb2.textContent = hh + '時';
+    svg.appendChild(lb2);
   }
 
   /* いまの時刻 */
   var nowT = Date.now();
-  if (nowT > xMin && nowT < xMax) {
+  if (nowT > o.xMin && nowT < o.xMax) {
     svg.appendChild(svgEl('line', { class: 'now-line', x1: x(nowT), x2: x(nowT), y1: PT, y2: H - PB }));
   }
 
+  /* 日ごとの最高・最低・天気（気温のグラフだけ） */
+  (o.marks || []).forEach(function (m) {
+    var left = Math.max(m.t0, o.xMin), right = Math.min(m.t1, o.xMax);
+    var wide = x(right) - x(left);
+    if (wide < 40) { return; }
+    var cx = x((left + right) / 2);
+
+    if (isNum(m.max) && isNum(m.min)) {
+      svg.appendChild(svgEl('line', {
+        x1: cx, x2: cx, y1: y(m.max), y2: y(m.min),
+        stroke: m.color, 'stroke-width': 1, opacity: '.45'
+      }));
+    }
+    [['max', m.max], ['min', m.min]].forEach(function (pair) {
+      if (!isNum(pair[1])) { return; }
+      svg.appendChild(svgEl('circle', {
+        cx: cx, cy: y(pair[1]), r: 3.5, fill: 'none', stroke: m.color, 'stroke-width': 2
+      }));
+      var vt = svgEl('text', {
+        class: 'mark ' + (pair[0] === 'max' ? 'mark--hi' : 'mark--lo'),
+        x: cx + 7, y: y(pair[1]) + 4
+      });
+      vt.textContent = Math.round(pair[1]) + '°';
+      svg.appendChild(vt);
+    });
+
+    if (m.weather && wide >= 62) {
+      var per = Math.floor(wide / 11);
+      var wt = svgEl('text', { class: 'mark mark--w', x: cx, y: 11, 'text-anchor': 'middle' });
+      wt.textContent = m.weather.length > per ? m.weather.slice(0, Math.max(2, per - 1)) + '…' : m.weather;
+      svg.appendChild(wt);
+    }
+  });
+
   /* 折れ線（値がひとつしかない提供元は丸で置く） */
-  series.forEach(function (s) {
+  o.series.forEach(function (s) {
     if (!s.points.length) { return; }
     if (s.points.length === 1 || s.single) {
       s.points.forEach(function (p) {
         svg.appendChild(svgEl('circle', {
-          cx: x(p.t).toFixed(1), cy: y(p.v).toFixed(1), r: 5,
-          fill: s.color, stroke: 'none'
+          cx: x(p.t).toFixed(1), cy: y(p.v).toFixed(1), r: 5, fill: s.color, stroke: 'none'
         }));
       });
       return;
@@ -932,10 +1022,21 @@ function lineChart(title, unit, series, xMin, xMax, digits, fixedRange, W) {
 /* 現在値しかない提供元も、グラフに点として置けるようにする */
 function pointRow(entry) {
   var v = entry.values;
-  return {
-    time: entry.time || new Date(),
-    temp: v.temp, rh: v.rh, vh: v.vh, mr: v.mr
-  };
+  return { time: entry.time || new Date(), temp: v.temp, rh: v.rh, vh: v.vh, mr: v.mr };
+}
+
+/* 日ごとの降水確率を、その日いっぱいの階段にする */
+function popStepsFromWeekly(list) {
+  var out = [];
+  (list || []).forEach(function (d) {
+    if (!isNum(d.pop)) { return; }
+    var t0 = new Date(d.key + 'T00:00:00+09:00').getTime();
+    if (isNaN(t0)) { return; }
+    out.push({ time: new Date(t0), pop: d.pop });
+    out.push({ time: new Date(t0 + 24 * 3600e3 - 60e3), pop: d.pop });
+  });
+  out.sort(function (a, b) { return a.time - b.time; });
+  return out;
 }
 
 /* グラフに載せる提供元を集める。実況も予報もひとつの軸に重ねる */
@@ -954,19 +1055,44 @@ function chartSeries() {
   }
 
   ['model', 'yahoo', 'weathernews'].forEach(function (k) {
+    /* 時間ごとに降水確率がない提供元は、日ごとの値を階段にして使う */
+    var steps = popStepsFromWeekly(state.weekly[k]);
+    var hasHourlyPop = (state.future[k] || []).some(function (r) { return isNum(r.pop); });
+    var popRows = (!hasHourlyPop && steps.length) ? steps : null;
+
     if (state.future[k] && state.future[k].length) {
       out.push({
-        key: k, color: SOURCES[k].color, rows: state.future[k], note: '予報',
+        key: k, color: SOURCES[k].color, rows: state.future[k], popRows: popRows, note: '予報',
         nowPoint: (state.now[k] && state.now[k].values) ? pointRow(state.now[k]) : null
       });
     } else if (state.now[k] && state.now[k].values) {
       out.push({
         key: k, color: SOURCES[k].color, rows: [pointRow(state.now[k])],
-        single: true, note: '現在値'
+        popRows: popRows, single: true, note: '現在値'
       });
+    } else if (popRows) {
+      out.push({ key: k, color: SOURCES[k].color, rows: [], popRows: popRows, note: '降水確率' });
     }
   });
   return out;
+}
+
+/* 気温のグラフに重ねる、日ごとの最高・最低・天気（気象庁の予報） */
+function dailyMarks(xMin, xMax) {
+  var marks = [];
+  var w = buildWeekly();
+  daysInRange(xMin, xMax).forEach(function (d) {
+    var j = w.byKey.jma[d.key];
+    if (!j) { return; }
+    if (!isNum(j.max) && !isNum(j.min) && !j.weather) { return; }
+    marks.push({
+      t0: d.t0, t1: d.t1, color: SOURCES.jma.color,
+      max: isNum(j.max) ? j.max : null,
+      min: isNum(j.min) ? j.min : null,
+      weather: j.weather || ''
+    });
+  });
+  return marks;
 }
 
 function renderChart() {
@@ -988,21 +1114,28 @@ function renderChart() {
 
   groups.forEach(function (g) {
     var i = el('span', 'legend__i');
-    var s = el('span', g.single ? 'legend__d' : 'legend__s');
-    s.style.background = g.color;
-    i.appendChild(s);
+    var mark = el('span', g.single ? 'legend__d' : 'legend__s');
+    mark.style.background = g.color;
+    i.appendChild(mark);
     i.appendChild(document.createTextNode(SOURCES[g.key].short + (g.note ? '（' + g.note + '）' : '')));
     legend.appendChild(i);
   });
+  var mk = el('span', 'legend__i');
+  var ring = el('span', 'legend__r');
+  ring.style.borderColor = SOURCES.jma.color;
+  mk.appendChild(ring);
+  mk.appendChild(document.createTextNode('気象庁の日ごとの最高／最低と天気'));
+  legend.appendChild(mk);
+
+  var marks = dailyMarks(xMin, xMax);
 
   [
-    { title: '気温', unit: '℃', key: 'temp', digits: 1 },
+    { title: '気温', unit: '℃', key: 'temp', digits: 1, marks: marks, height: 200, padTop: 28 },
     { title: '相対湿度', unit: '%', key: 'rh', digits: 0 },
     { title: '絶対湿度', unit: 'g/m³', key: 'vh', digits: 1 },
     { title: '降水確率', unit: '%', key: 'pop', digits: 0, range: [0, 100] }
   ].forEach(function (c) {
     var series = groups.map(function (g) {
-      /* 降水確率は気象庁だけ別の並び（6時間ごと）から取る */
       var rows = (c.key === 'pop' && g.popRows) ? g.popRows : g.rows;
       var single = g.single && !(c.key === 'pop' && g.popRows);
       var points = rows.filter(function (r) {
@@ -1019,10 +1152,14 @@ function renderChart() {
         }
       }
       return { color: g.color, single: single, points: points };
-    }).filter(function (s) { return s.points.length >= 1; });
+    }).filter(function (x) { return x.points.length >= 1; });
 
-    if (series.length) {
-      box.appendChild(lineChart(c.title, c.unit, series, xMin, xMax, c.digits, c.range, chartWidth));
+    if (series.length || (c.marks && c.marks.length)) {
+      box.appendChild(lineChart({
+        title: c.title, unit: c.unit, series: series, xMin: xMin, xMax: xMax,
+        digits: c.digits, range: c.range, width: chartWidth,
+        marks: c.marks, height: c.height, padTop: c.padTop
+      }));
     }
   });
 
