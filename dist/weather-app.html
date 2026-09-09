@@ -442,7 +442,7 @@ table{ border-collapse:collapse; width:100%; font-size:.8125rem; }
         <button type="button" class="seg__btn" data-days="7">7日</button>
       </div>
     </div>
-    <p class="lead">過去24時間の実況と、これからの予報をひとつの時間軸に並べています。縦の点線が現在時刻です。</p>
+    <p class="lead">直近1時間の実況と、これからの予報をひとつの時間軸に並べています。縦の点線が現在時刻です。雨量は棒で出しています。</p>
     <div id="legend" class="legend"></div>
     <details class="colors">
       <summary>色を変える</summary>
@@ -593,6 +593,8 @@ var STORE_KEY = 'dc-weather-places';
 var STORE_KEY_OLD = 'dc-weather-place';
 var COLOR_KEY = 'dc-weather-colors';
 var AUTO_RELOAD_MS = 10 * 60 * 1000;
+/* グラフに出す過去の長さ（時間）。実況の直近ぶんだけ出します。 */
+var PAST_HOURS = 1;
 
 /* 提供元の表示名と色（CSS変数と合わせています） */
 var SOURCES = {
@@ -862,7 +864,7 @@ var state = {
   offices: null,        /* area.json の予報区一覧 {code: name} */
   station: null,        /* 最寄りのアメダス観測所 */
   now: {},              /* 提供元ごとの現在値 */
-  past: [],             /* アメダスの10分値（過去24時間） */
+  past: [],             /* アメダスの10分値（直近ぶん） */
   future: {},           /* 提供元ごとの時間別予報 */
   daily: [],            /* 気象庁の日別予報 */
   pops: [],             /* 気象庁の降水確率（6時間ごと） */
@@ -977,7 +979,7 @@ function loadAmedas(place) {
     });
 }
 
-/* 過去24時間の10分値。3時間ごとのファイルを8個つなぎます */
+/* 直近の10分値。グラフに出すのは直近1時間ぶんなので、新しい2ファイルで足ります */
 function loadAmedasPast(stationCode, obsTime) {
   var jst = new Date(obsTime.getTime() + 9 * 3600 * 1000);
   var blockHour = Math.floor(jst.getUTCHours() / 3) * 3;
@@ -1216,6 +1218,7 @@ function loadModel(place) {
           var rh = h.relative_humidity_2m ? h.relative_humidity_2m[i] : null;
           var p = h.surface_pressure ? h.surface_pressure[i] : null;
           var pop = pops[h.time[i]];
+          var mm = h.precipitation ? h.precipitation[i] : null;
           if (!isNum(t) || !isNum(rh)) { continue; }
           rows.push({
             time: new Date(h.time[i] + ':00+09:00'),
@@ -1223,7 +1226,8 @@ function loadModel(place) {
             rh: rh,
             vh: volumetricHumidity(t, rh),
             mr: mixingRatio(t, rh, isNum(p) ? p : undefined),
-            pop: isNum(pop) ? pop : undefined
+            pop: isNum(pop) ? pop : undefined,
+            precip: isNum(mm) ? mm : undefined
           });
         }
       }
@@ -1765,6 +1769,11 @@ function lineChart(o) {
     return wrap;
   }
 
+  if (o.fromZero) {
+    /* 雨量は0から。降っていないときも軸がつぶれないよう、少し余裕を持たせます。 */
+    min = 0;
+    max = Math.max(max, 1);
+  }
   var sc = o.range ? { min: o.range[0], max: o.range[1],
                        ticks: [o.range[0], (o.range[0] + o.range[1]) / 2, o.range[1]] }
                    : niceScale(min, max, 3);
@@ -1857,6 +1866,29 @@ function lineChart(o) {
       svg.appendChild(wt);
     }
   });
+
+  /* 棒（雨量）。重なっても見えるよう、少し透かして細めに置く。 */
+  if (o.bars) {
+    var slots = o.series.length || 1;
+    var span = (o.xMax - o.xMin) / 3600e3;                 /* 表示している時間の幅 */
+    var full = Math.max((W - PL - PR) / Math.max(span, 1), 2);   /* 1時間ぶんの横幅 */
+    var bw = Math.max(full / slots - 0.5, 1);
+    o.series.forEach(function (s, si) {
+      s.points.forEach(function (p) {
+        if (!(p.v > 0)) { return; }                        /* 0mm は描かない */
+        var top = y(p.v);
+        var base = y(sc.min);
+        var left = x(p.t) - full / 2 + si * (bw + 0.5);
+        svg.appendChild(svgEl('rect', {
+          x: left.toFixed(1), y: top.toFixed(1),
+          width: bw.toFixed(1), height: Math.max(base - top, 1).toFixed(1),
+          fill: s.color, opacity: '.6'
+        }));
+      });
+    });
+    wrap.appendChild(svg);
+    return wrap;
+  }
 
   /* 折れ線（値がひとつしかない提供元は丸で置く） */
   o.series.forEach(function (s) {
@@ -1982,7 +2014,7 @@ function renderChart() {
   }
 
   var now = Date.now();
-  var xMin = now - 24 * 3600e3;
+  var xMin = now - PAST_HOURS * 3600e3;
   var xMax = now + state.chartDays * 24 * 3600e3;
   var chartWidth = Math.max(320, Math.min(1400, box.clientWidth || 720));
 
@@ -2007,11 +2039,12 @@ function renderChart() {
     { title: '気温', unit: '℃', key: 'temp', digits: 1, marks: marks, height: 200, padTop: 28 },
     { title: '相対湿度', unit: '%', key: 'rh', digits: 0 },
     { title: '絶対湿度', unit: 'g/m³', key: 'vh', digits: 1 },
-    { title: '降水確率', unit: '%', key: 'pop', digits: 0, range: [0, 100] }
+    { title: '降水確率', unit: '%', key: 'pop', digits: 0, range: [0, 100] },
+    { title: '雨量', unit: 'mm/h', key: 'precip', digits: 1, bars: true, fromZero: true }
   ].forEach(function (c) {
     var series = groups.map(function (g) {
       var rows = (c.key === 'pop' && g.popRows) ? g.popRows : g.rows;
-      var single = g.single && !(c.key === 'pop' && g.popRows);
+      var single = g.single && !(c.key === 'pop' && g.popRows) && !c.bars;
       var points = rows.filter(function (r) {
         var t = r.time.getTime();
         return t >= xMin && t <= xMax && isNum(r[c.key]);
@@ -2032,7 +2065,8 @@ function renderChart() {
       box.appendChild(lineChart({
         title: c.title, unit: c.unit, series: series, xMin: xMin, xMax: xMax,
         digits: c.digits, range: c.range, width: chartWidth,
-        marks: c.marks, height: c.height, padTop: c.padTop
+        marks: c.marks, height: c.height, padTop: c.padTop,
+        bars: c.bars, fromZero: c.fromZero
       }));
     }
   });
