@@ -38,6 +38,19 @@
 
 ## 開き方
 
+### iPhone・iPad・Mac のアプリ
+
+`apple/` に、同じ中身の **SwiftUI アプリ**を置いてあります。
+ひとつのプロジェクトで iPhone・iPad・Mac の3つに入り、
+**登録した地点と提供元の色は iCloud で行き来します**。
+
+```bash
+open apple/WeatherAH.xcodeproj
+```
+
+入れ方と iCloud 同期の設定は [apple/README.md](apple/README.md) にあります。
+Mac で動かすだけなら Apple ID があれば十分で、費用はかかりません。
+
 ### そのまま使う
 
 上のURLを開くだけです。スマホのホーム画面に追加しておくと便利です。
@@ -64,6 +77,10 @@ python3 -m http.server 8080 --directory docs
 ## 中身
 
 ```
+apple/         iPhone・iPad・Mac のアプリ（SwiftUI）
+  WeatherAH.xcodeproj
+  WeatherAH/   画面
+  WeatherCore/ 計算と取得（単体テスト付き）
 docs/          アプリ本体。GitHub Pages が公開しているのはここです
   index.html
   assets/      app.css / app.js
@@ -261,6 +278,7 @@ python3 scripts/stamp_assets.py     # docs/index.html の ?v=… を付け替え
 ```bash
 node test/run.js                  # 計算・読み取り・予報JSONの解釈・当たり具合の表示
 python3 scripts/test_collect.py   # 取り込みスクリプトの読み取り処理・当たり具合の集計
+swift test --package-path apple/WeatherCore   # Apple版の計算と読み取り（Macで）
 ```
 
 ネットワークにはつながず、モックしたデータで確かめます。
