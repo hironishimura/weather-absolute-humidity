@@ -101,6 +101,38 @@ ok('札幌 → 石狩・空知・後志地方', ctx.resolveOffice({ lat: 43.0618
 ok('手で指定したらそれを使う', ctx.resolveOffice({ lat: 36.5, lon: 139.8, office: '110000' }) === '110000');
 ok('area.json に名前がなければ控えのコード', ctx.resolveOffice({ lat: 34.6937, lon: 135.5023 }) === '270000');
 
+console.log('\n■ 週間表の降水確率の穴埋め');
+const D = (iso) => new Date(iso);
+ctx.state.daily = [
+  { date: D('2026-09-09T00:00:00+09:00'), weather: 'くもり', max: 29, min: 21, pop: null },
+  { date: D('2026-09-10T00:00:00+09:00'), weather: '晴れ', max: 28, min: 20, pop: 30 }
+];
+ctx.state.pops = [
+  { time: D('2026-09-09T00:00:00+09:00'), pop: 10 },
+  { time: D('2026-09-09T12:00:00+09:00'), pop: 70 },
+  { time: D('2026-09-10T00:00:00+09:00'), pop: 60 }
+];
+ctx.state.popBlocks = {
+  yahoo: [
+    { time: D('2026-09-09T00:00:00+09:00'), pop: 20 },
+    { time: D('2026-09-09T18:00:00+09:00'), pop: 80 }
+  ],
+  weathernews: [ { time: D('2026-09-09T12:00:00+09:00'), pop: 90 } ]
+};
+ctx.state.future = { yahoo: [], weathernews: [], model: [] };
+ctx.state.weekly = { yahoo: [{ key: '2026-09-11', weather: '雨', max: 23, min: 18, pop: 70 }] };
+let w = ctx.buildWeekly();
+ok('気象庁 9/9 は6時間ごとの最大で埋まる', w.byKey.jma['2026-09-09'].pop === 70,
+   w.byKey.jma['2026-09-09'].pop);
+ok('気象庁 9/10 は発表値をそのまま使う', w.byKey.jma['2026-09-10'].pop === 30,
+   w.byKey.jma['2026-09-10'].pop);
+ok('Yahoo 9/9 は時間帯の最大で埋まる', w.byKey.yahoo['2026-09-09'].pop === 80,
+   w.byKey.yahoo['2026-09-09'].pop);
+ok('Yahoo 9/11 は週間表の値', w.byKey.yahoo['2026-09-11'].pop === 70);
+ok('ウェザーニュース 9/9 も埋まる', w.byKey.weathernews['2026-09-09'].pop === 90,
+   w.byKey.weathernews['2026-09-09'].pop);
+ok('降水確率だけの日も行になる', !!w.byKey.weathernews['2026-09-09']);
+
 console.log('\n■ 最寄り観測所の並べ替え');
 const table = {
   '41277': { kjName: '宇都宮', lat: [36, 33.0], lon: [139, 52.2], alt: 119 },

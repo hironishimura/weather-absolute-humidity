@@ -1282,6 +1282,30 @@ function dailyFromHourly(rows) {
   return by;
 }
 
+/* 時間帯ごとの降水確率から、日ごとの値（その日のいちばん高い確率）を作る */
+function dailyPopFromBlocks(rows) {
+  var by = {};
+  (rows || []).forEach(function (r) {
+    if (!isNum(r.pop)) { return; }
+    var k = jstKey(r.time);
+    by[k] = (by[k] === undefined) ? r.pop : Math.max(by[k], r.pop);
+  });
+  return by;
+}
+
+/* 日ごとの表に、降水確率が抜けている日を埋める */
+function fillPops(days, popByDay) {
+  Object.keys(popByDay).forEach(function (k) {
+    var d = days[k];
+    if (!d) {
+      days[k] = { key: k, max: null, min: null, pop: popByDay[k], vhMax: null, vhMin: null, derived: true };
+    } else if (!isNum(d.pop)) {
+      d.pop = popByDay[k];
+    }
+  });
+  return days;
+}
+
 /* 提供元ごとの日別予報を、日付でそろえる */
 function buildWeekly() {
   var byKey = { jma: {}, model: dailyFromHourly(state.future.model || []),
@@ -1289,12 +1313,15 @@ function buildWeekly() {
 
   state.daily.forEach(function (d) {
     byKey.jma[jstKey(d.date)] = {
+      key: jstKey(d.date),
       weather: d.weather || TELOP[d.code] || '',
       max: isNum(d.max) ? d.max : null,
       min: isNum(d.min) ? d.min : null,
       pop: isNum(d.pop) ? d.pop : null
     };
   });
+  /* 6時間ごとの降水確率しかない日を埋める */
+  fillPops(byKey.jma, dailyPopFromBlocks(state.pops));
 
   /* 週間表があればその値。ない日は時間ごとの予報から日ごとにまとめる */
   ['yahoo', 'weathernews'].forEach(function (k) {
@@ -1311,6 +1338,8 @@ function buildWeekly() {
         derived: false
       };
     });
+    /* 時間帯ごとの降水確率しかない日を埋める（Yahoo!天気の今日明日、ウェザーニュースの午前午後） */
+    fillPops(out, dailyPopFromBlocks(state.popBlocks[k]));
     byKey[k] = out;
   });
 
@@ -1392,7 +1421,10 @@ function renderWeekly() {
   $('weekly-note').textContent =
     '気温は日ごとの最高／最低です。気象庁は発表値、気象庁MSM/GSMは1時間ごとの予報から' +
     'まとめた計算値です。Yahoo!天気とウェザーニュースは、週間表のある日はその値、' +
-    'ない日は時間ごとの予報からまとめた値になります。取得できた提供元：' + have.join('・') + '。';
+    'ない日は時間ごとの予報からまとめた値になります。' +
+    '降水確率は、日ごとの発表値があればその値、なければ時間帯ごとの値のうち' +
+    'その日のいちばん高いものです。空欄はその提供元がそこまで出していない日です。' +
+    '取得できた提供元：' + have.join('・') + '。';
 }
 
 function renderStatus() {
