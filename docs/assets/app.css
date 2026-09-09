@@ -199,6 +199,7 @@ table{ border-collapse:collapse; width:100%; font-size:.8125rem; }
 .legend{ display:flex; flex-wrap:wrap; gap:12px; margin-top:12px; font-size:.75rem; color:var(--text-mute); }
 .legend__i{ display:flex; align-items:center; gap:6px; }
 .legend__s{ width:14px; height:3px; border-radius:2px; }
+.legend__d{ width:9px; height:9px; border-radius:50%; }
 .charts{ margin-top:8px; display:flex; flex-direction:column; gap:6px; }
 .chart__t{ font-size:.6875rem; color:var(--text-mute); letter-spacing:.08em; }
 .charts svg{ display:block; width:100%; height:auto; overflow:visible; }

@@ -254,7 +254,7 @@ var state = {
   overview: '',
   officeName: '',
   status: [],
-  chartMode: 'past',
+  chartDays: 2,
   surface: 10
 };
 
@@ -809,7 +809,8 @@ function lineChart(title, unit, series, xMin, xMax, digits) {
   });
 
   /* 時刻の目盛り */
-  var stepH = (xMax - xMin) > 40 * 3600e3 ? 12 : ((xMax - xMin) > 20 * 3600e3 ? 6 : 3);
+  var span = (xMax - xMin) / 3600e3;
+  var stepH = span > 72 ? 24 : (span > 40 ? 12 : (span > 20 ? 6 : 3));
   var cur = new Date(xMin);
   var jst = new Date(cur.getTime() + 9 * 3600e3);
   jst.setUTCMinutes(0, 0, 0);
@@ -828,9 +829,18 @@ function lineChart(title, unit, series, xMin, xMax, digits) {
     svg.appendChild(svgEl('line', { class: 'now-line', x1: x(nowT), x2: x(nowT), y1: PT, y2: H - PB }));
   }
 
-  /* 折れ線 */
+  /* 折れ線（値がひとつしかない提供元は丸で置く） */
   series.forEach(function (s) {
     if (!s.points.length) { return; }
+    if (s.points.length === 1 || s.single) {
+      s.points.forEach(function (p) {
+        svg.appendChild(svgEl('circle', {
+          cx: x(p.t).toFixed(1), cy: y(p.v).toFixed(1), r: 5,
+          fill: s.color, stroke: 'none'
+        }));
+      });
+      return;
+    }
     var d = s.points.map(function (p, i) {
       return (i ? 'L' : 'M') + x(p.t).toFixed(1) + ' ' + y(p.v).toFixed(1);
     }).join(' ');
@@ -844,19 +854,35 @@ function lineChart(title, unit, series, xMin, xMax, digits) {
   return wrap;
 }
 
-function chartSeries(mode) {
+/* 現在値しかない提供元も、グラフに点として置けるようにする */
+function pointRow(entry) {
+  var v = entry.values;
+  return {
+    time: entry.time || new Date(),
+    temp: v.temp, rh: v.rh, vh: v.vh, mr: v.mr
+  };
+}
+
+/* グラフに載せる提供元を集める。実況も予報もひとつの軸に重ねる */
+function chartSeries() {
   var out = [];
-  if (mode === 'past') {
-    if (state.past.length) {
-      out.push({ key: 'jma', color: SOURCES.jma.color, rows: state.past });
-    }
-  } else {
-    ['model', 'yahoo', 'weathernews'].forEach(function (k) {
-      if (state.future[k] && state.future[k].length) {
-        out.push({ key: k, color: SOURCES[k].color, rows: state.future[k] });
-      }
-    });
+
+  if (state.past.length) {
+    out.push({ key: 'jma', color: SOURCES.jma.color, rows: state.past, note: '' });
+  } else if (state.now.jma && state.now.jma.values) {
+    out.push({ key: 'jma', color: SOURCES.jma.color, rows: [pointRow(state.now.jma)], single: true, note: '' });
   }
+
+  ['model', 'yahoo', 'weathernews'].forEach(function (k) {
+    if (state.future[k] && state.future[k].length) {
+      out.push({ key: k, color: SOURCES[k].color, rows: state.future[k], note: '予報' });
+    } else if (state.now[k] && state.now[k].values) {
+      out.push({
+        key: k, color: SOURCES[k].color, rows: [pointRow(state.now[k])],
+        single: true, note: '現在値'
+      });
+    }
+  });
   return out;
 }
 
@@ -866,31 +892,22 @@ function renderChart() {
   box.innerHTML = '';
   legend.innerHTML = '';
 
-  var mode = state.chartMode;
-  var groups = chartSeries(mode);
+  var groups = chartSeries();
   if (!groups.length) {
-    box.appendChild(el('p', 'empty', mode === 'past'
-      ? '実況の推移を取得できませんでした。'
-      : '予報の時系列を取得できませんでした。'));
+    box.appendChild(el('p', 'empty', '時系列を取得できませんでした。'));
     return;
   }
 
   var now = Date.now();
-  var xMin, xMax;
-  if (mode === 'past') {
-    xMin = now - 24 * 3600e3;
-    xMax = now;
-  } else {
-    xMin = now - 3600e3;
-    xMax = now + 48 * 3600e3;
-  }
+  var xMin = now - 24 * 3600e3;
+  var xMax = now + state.chartDays * 24 * 3600e3;
 
   groups.forEach(function (g) {
     var i = el('span', 'legend__i');
-    var s = el('span', 'legend__s');
+    var s = el('span', g.single ? 'legend__d' : 'legend__s');
     s.style.background = g.color;
     i.appendChild(s);
-    i.appendChild(document.createTextNode(SOURCES[g.key].name));
+    i.appendChild(document.createTextNode(SOURCES[g.key].short + (g.note ? '（' + g.note + '）' : '')));
     legend.appendChild(i);
   });
 
@@ -902,12 +919,13 @@ function renderChart() {
     var series = groups.map(function (g) {
       return {
         color: g.color,
+        single: g.single,
         points: g.rows.filter(function (r) {
           var t = r.time.getTime();
           return t >= xMin && t <= xMax && isNum(r[c.key]);
         }).map(function (r) { return { t: r.time.getTime(), v: r[c.key] }; })
       };
-    }).filter(function (s) { return s.points.length > 1; });
+    }).filter(function (s) { return s.points.length >= 1; });
 
     if (series.length) {
       box.appendChild(lineChart(c.title, c.unit, series, xMin, xMax, c.digits));
@@ -1134,9 +1152,8 @@ function init() {
     b.addEventListener('click', function () {
       Array.prototype.forEach.call(document.querySelectorAll('.seg__btn'), function (o) {
         o.classList.toggle('is-on', o === b);
-        o.setAttribute('aria-selected', o === b ? 'true' : 'false');
       });
-      state.chartMode = b.getAttribute('data-mode');
+      state.chartDays = parseInt(b.getAttribute('data-days'), 10) || 2;
       renderChart();
     });
   });

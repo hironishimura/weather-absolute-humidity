@@ -210,6 +210,7 @@ table{ border-collapse:collapse; width:100%; font-size:.8125rem; }
 .legend{ display:flex; flex-wrap:wrap; gap:12px; margin-top:12px; font-size:.75rem; color:var(--text-mute); }
 .legend__i{ display:flex; align-items:center; gap:6px; }
 .legend__s{ width:14px; height:3px; border-radius:2px; }
+.legend__d{ width:9px; height:9px; border-radius:50%; }
 .charts{ margin-top:8px; display:flex; flex-direction:column; gap:6px; }
 .chart__t{ font-size:.6875rem; color:var(--text-mute); letter-spacing:.08em; }
 .charts svg{ display:block; width:100%; height:auto; overflow:visible; }
@@ -320,19 +321,6 @@ table{ border-collapse:collapse; width:100%; font-size:.8125rem; }
     </dl>
   </section>
 
-  <!-- ============ 結露チェック ============ -->
-  <section class="card" aria-label="結露チェック">
-    <h2>結露チェック</h2>
-    <p class="lead">表面温度が露点を下回ると結露します。窓ガラスや壁の表面温度を入れて確かめられます。</p>
-    <div class="dewcheck">
-      <label class="field field--wide">
-        <span>表面温度 <b id="surf-out">10.0</b> ℃</span>
-        <input type="range" id="in-surface" min="-10" max="40" step="0.5" value="10">
-      </label>
-      <p class="dewcheck__verdict" id="dew-verdict">—</p>
-    </div>
-  </section>
-
   <!-- ============ ソース比較 ============ -->
   <section class="card" aria-label="提供元ごとの値">
     <h2>提供元ごとの値</h2>
@@ -352,12 +340,14 @@ table{ border-collapse:collapse; width:100%; font-size:.8125rem; }
   <!-- ============ 時系列 ============ -->
   <section class="card" aria-label="時系列">
     <div class="card__head">
-      <h2>時系列</h2>
-      <div class="seg" role="tablist" aria-label="表示する期間">
-        <button type="button" class="seg__btn is-on" data-mode="past" role="tab" aria-selected="true">実況（過去24時間）</button>
-        <button type="button" class="seg__btn" data-mode="future" role="tab" aria-selected="false">予報（これから）</button>
+      <h2>時系列（各社を重ねて表示）</h2>
+      <div class="seg" role="group" aria-label="表示する範囲">
+        <button type="button" class="seg__btn" data-days="1">1日</button>
+        <button type="button" class="seg__btn is-on" data-days="2">2日</button>
+        <button type="button" class="seg__btn" data-days="3">3日</button>
       </div>
     </div>
+    <p class="lead">過去24時間の実況と、これからの予報をひとつの軸に並べています。縦の点線が現在時刻です。</p>
     <div id="legend" class="legend"></div>
     <div id="charts" class="charts">
       <p class="empty">読み込み中…</p>
@@ -379,6 +369,19 @@ table{ border-collapse:collapse; width:100%; font-size:.8125rem; }
       <summary>気象概況</summary>
       <p id="fc-overview" class="overview__text">—</p>
     </details>
+  </section>
+
+  <!-- ============ 結露チェック ============ -->
+  <section class="card" aria-label="結露チェック">
+    <h2>結露チェック</h2>
+    <p class="lead">表面温度が露点を下回ると結露します。窓ガラスや壁の表面温度を入れて確かめられます。</p>
+    <div class="dewcheck">
+      <label class="field field--wide">
+        <span>表面温度 <b id="surf-out">10.0</b> ℃</span>
+        <input type="range" id="in-surface" min="-10" max="40" step="0.5" value="10">
+      </label>
+      <p class="dewcheck__verdict" id="dew-verdict">—</p>
+    </div>
   </section>
 
   <!-- ============ 取得状況 ============ -->
@@ -663,7 +666,7 @@ var state = {
   overview: '',
   officeName: '',
   status: [],
-  chartMode: 'past',
+  chartDays: 2,
   surface: 10
 };
 
@@ -1218,7 +1221,8 @@ function lineChart(title, unit, series, xMin, xMax, digits) {
   });
 
   /* 時刻の目盛り */
-  var stepH = (xMax - xMin) > 40 * 3600e3 ? 12 : ((xMax - xMin) > 20 * 3600e3 ? 6 : 3);
+  var span = (xMax - xMin) / 3600e3;
+  var stepH = span > 72 ? 24 : (span > 40 ? 12 : (span > 20 ? 6 : 3));
   var cur = new Date(xMin);
   var jst = new Date(cur.getTime() + 9 * 3600e3);
   jst.setUTCMinutes(0, 0, 0);
@@ -1237,9 +1241,18 @@ function lineChart(title, unit, series, xMin, xMax, digits) {
     svg.appendChild(svgEl('line', { class: 'now-line', x1: x(nowT), x2: x(nowT), y1: PT, y2: H - PB }));
   }
 
-  /* 折れ線 */
+  /* 折れ線（値がひとつしかない提供元は丸で置く） */
   series.forEach(function (s) {
     if (!s.points.length) { return; }
+    if (s.points.length === 1 || s.single) {
+      s.points.forEach(function (p) {
+        svg.appendChild(svgEl('circle', {
+          cx: x(p.t).toFixed(1), cy: y(p.v).toFixed(1), r: 5,
+          fill: s.color, stroke: 'none'
+        }));
+      });
+      return;
+    }
     var d = s.points.map(function (p, i) {
       return (i ? 'L' : 'M') + x(p.t).toFixed(1) + ' ' + y(p.v).toFixed(1);
     }).join(' ');
@@ -1253,19 +1266,35 @@ function lineChart(title, unit, series, xMin, xMax, digits) {
   return wrap;
 }
 
-function chartSeries(mode) {
+/* 現在値しかない提供元も、グラフに点として置けるようにする */
+function pointRow(entry) {
+  var v = entry.values;
+  return {
+    time: entry.time || new Date(),
+    temp: v.temp, rh: v.rh, vh: v.vh, mr: v.mr
+  };
+}
+
+/* グラフに載せる提供元を集める。実況も予報もひとつの軸に重ねる */
+function chartSeries() {
   var out = [];
-  if (mode === 'past') {
-    if (state.past.length) {
-      out.push({ key: 'jma', color: SOURCES.jma.color, rows: state.past });
-    }
-  } else {
-    ['model', 'yahoo', 'weathernews'].forEach(function (k) {
-      if (state.future[k] && state.future[k].length) {
-        out.push({ key: k, color: SOURCES[k].color, rows: state.future[k] });
-      }
-    });
+
+  if (state.past.length) {
+    out.push({ key: 'jma', color: SOURCES.jma.color, rows: state.past, note: '' });
+  } else if (state.now.jma && state.now.jma.values) {
+    out.push({ key: 'jma', color: SOURCES.jma.color, rows: [pointRow(state.now.jma)], single: true, note: '' });
   }
+
+  ['model', 'yahoo', 'weathernews'].forEach(function (k) {
+    if (state.future[k] && state.future[k].length) {
+      out.push({ key: k, color: SOURCES[k].color, rows: state.future[k], note: '予報' });
+    } else if (state.now[k] && state.now[k].values) {
+      out.push({
+        key: k, color: SOURCES[k].color, rows: [pointRow(state.now[k])],
+        single: true, note: '現在値'
+      });
+    }
+  });
   return out;
 }
 
@@ -1275,31 +1304,22 @@ function renderChart() {
   box.innerHTML = '';
   legend.innerHTML = '';
 
-  var mode = state.chartMode;
-  var groups = chartSeries(mode);
+  var groups = chartSeries();
   if (!groups.length) {
-    box.appendChild(el('p', 'empty', mode === 'past'
-      ? '実況の推移を取得できませんでした。'
-      : '予報の時系列を取得できませんでした。'));
+    box.appendChild(el('p', 'empty', '時系列を取得できませんでした。'));
     return;
   }
 
   var now = Date.now();
-  var xMin, xMax;
-  if (mode === 'past') {
-    xMin = now - 24 * 3600e3;
-    xMax = now;
-  } else {
-    xMin = now - 3600e3;
-    xMax = now + 48 * 3600e3;
-  }
+  var xMin = now - 24 * 3600e3;
+  var xMax = now + state.chartDays * 24 * 3600e3;
 
   groups.forEach(function (g) {
     var i = el('span', 'legend__i');
-    var s = el('span', 'legend__s');
+    var s = el('span', g.single ? 'legend__d' : 'legend__s');
     s.style.background = g.color;
     i.appendChild(s);
-    i.appendChild(document.createTextNode(SOURCES[g.key].name));
+    i.appendChild(document.createTextNode(SOURCES[g.key].short + (g.note ? '（' + g.note + '）' : '')));
     legend.appendChild(i);
   });
 
@@ -1311,12 +1331,13 @@ function renderChart() {
     var series = groups.map(function (g) {
       return {
         color: g.color,
+        single: g.single,
         points: g.rows.filter(function (r) {
           var t = r.time.getTime();
           return t >= xMin && t <= xMax && isNum(r[c.key]);
         }).map(function (r) { return { t: r.time.getTime(), v: r[c.key] }; })
       };
-    }).filter(function (s) { return s.points.length > 1; });
+    }).filter(function (s) { return s.points.length >= 1; });
 
     if (series.length) {
       box.appendChild(lineChart(c.title, c.unit, series, xMin, xMax, c.digits));
@@ -1543,9 +1564,8 @@ function init() {
     b.addEventListener('click', function () {
       Array.prototype.forEach.call(document.querySelectorAll('.seg__btn'), function (o) {
         o.classList.toggle('is-on', o === b);
-        o.setAttribute('aria-selected', o === b ? 'true' : 'false');
       });
-      state.chartMode = b.getAttribute('data-mode');
+      state.chartDays = parseInt(b.getAttribute('data-days'), 10) || 2;
       renderChart();
     });
   });

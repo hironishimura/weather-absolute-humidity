@@ -89,19 +89,6 @@
     </dl>
   </section>
 
-  <!-- ============ 結露チェック ============ -->
-  <section class="card" aria-label="結露チェック">
-    <h2>結露チェック</h2>
-    <p class="lead">表面温度が露点を下回ると結露します。窓ガラスや壁の表面温度を入れて確かめられます。</p>
-    <div class="dewcheck">
-      <label class="field field--wide">
-        <span>表面温度 <b id="surf-out">10.0</b> ℃</span>
-        <input type="range" id="in-surface" min="-10" max="40" step="0.5" value="10">
-      </label>
-      <p class="dewcheck__verdict" id="dew-verdict">—</p>
-    </div>
-  </section>
-
   <!-- ============ ソース比較 ============ -->
   <section class="card" aria-label="提供元ごとの値">
     <h2>提供元ごとの値</h2>
@@ -121,12 +108,14 @@
   <!-- ============ 時系列 ============ -->
   <section class="card" aria-label="時系列">
     <div class="card__head">
-      <h2>時系列</h2>
-      <div class="seg" role="tablist" aria-label="表示する期間">
-        <button type="button" class="seg__btn is-on" data-mode="past" role="tab" aria-selected="true">実況（過去24時間）</button>
-        <button type="button" class="seg__btn" data-mode="future" role="tab" aria-selected="false">予報（これから）</button>
+      <h2>時系列（各社を重ねて表示）</h2>
+      <div class="seg" role="group" aria-label="表示する範囲">
+        <button type="button" class="seg__btn" data-days="1">1日</button>
+        <button type="button" class="seg__btn is-on" data-days="2">2日</button>
+        <button type="button" class="seg__btn" data-days="3">3日</button>
       </div>
     </div>
+    <p class="lead">過去24時間の実況と、これからの予報をひとつの軸に並べています。縦の点線が現在時刻です。</p>
     <div id="legend" class="legend"></div>
     <div id="charts" class="charts">
       <p class="empty">読み込み中…</p>
@@ -148,6 +137,19 @@
       <summary>気象概況</summary>
       <p id="fc-overview" class="overview__text">—</p>
     </details>
+  </section>
+
+  <!-- ============ 結露チェック ============ -->
+  <section class="card" aria-label="結露チェック">
+    <h2>結露チェック</h2>
+    <p class="lead">表面温度が露点を下回ると結露します。窓ガラスや壁の表面温度を入れて確かめられます。</p>
+    <div class="dewcheck">
+      <label class="field field--wide">
+        <span>表面温度 <b id="surf-out">10.0</b> ℃</span>
+        <input type="range" id="in-surface" min="-10" max="40" step="0.5" value="10">
+      </label>
+      <p class="dewcheck__verdict" id="dew-verdict">—</p>
+    </div>
   </section>
 
   <!-- ============ 取得状況 ============ -->
