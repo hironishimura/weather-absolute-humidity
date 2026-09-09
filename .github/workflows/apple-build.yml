@@ -1,0 +1,95 @@
+name: iPhone・iPad・Mac アプリの確認
+
+# 手元の Linux では Swift を動かせないので、ここ（macOS）で確かめています。
+#   1. WeatherCore（計算と読み取り）の単体テスト
+#   2. iPhone / iPad / Mac それぞれのビルド
+
+on:
+  push:
+    branches: [main, apple]
+    paths:
+      - 'apple/**'
+      - '.github/workflows/apple-build.yml'
+  pull_request:
+    paths:
+      - 'apple/**'
+  workflow_dispatch:
+
+concurrency:
+  group: apple-build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  core:
+    name: WeatherCore のテスト
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Xcode の場所を出す
+        run: xcodebuild -version && swift --version
+      - name: テスト
+        run: |
+          set -o pipefail
+          swift test --package-path apple/WeatherCore 2>&1 \
+            | grep -Ev "^Test Case .* passed|^Test Suite .* passed|' started\.$" 
+
+  app:
+    name: アプリのビルド
+    runs-on: macos-15
+    needs: core
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: iPhone
+            destination: 'platform=iOS Simulator,name=iPhone 16,OS=latest'
+          - name: iPad
+            destination: 'platform=iOS Simulator,name=iPad (10th generation),OS=latest'
+          - name: Mac
+            destination: 'platform=macOS'
+    steps:
+      - uses: actions/checkout@v4
+      - name: 使えるシミュレータを出す
+        run: xcrun simctl list devices available | head -40
+      - name: プロジェクトの中身を出す
+        run: xcodebuild -project apple/WeatherAH.xcodeproj -list
+      - name: ${{ matrix.name }} 向けにビルド
+        run: |
+          set -o pipefail
+          set -o pipefail
+          xcodebuild build \
+            -project apple/WeatherAH.xcodeproj \
+            -scheme WeatherAH \
+            -destination '${{ matrix.destination }}' \
+            -derivedDataPath /tmp/dd \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
+            | xcbeautify --quiet || \
+          xcodebuild build \
+            -project apple/WeatherAH.xcodeproj \
+            -scheme WeatherAH \
+            -destination '${{ matrix.destination }}' \
+            -derivedDataPath /tmp/dd \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY=""
+
+      - name: 中身が入っているか確かめる
+        # ソースが1本も入っていなくてもビルドは通ってしまうので、
+        # 出来上がったアプリに自分で書いたコードが入っていることを見ておきます。
+        # Xcode は Debug ビルドで本体を .debug.dylib に分けることがあるので、
+        # アプリの中の実行できるファイルを全部あたります。
+        run: |
+          APP=$(find /tmp/dd/Build/Products -maxdepth 2 -name '*.app' | head -1)
+          if [ -z "$APP" ]; then echo "アプリが見つかりません"; exit 1; fi
+          echo "できたもの: $APP（全体 $(du -sk "$APP" | cut -f1) KB）"
+          find "$APP" -type f -size +8k | sed "s|$APP|.|"
+
+          found_app=0
+          found_core=0
+          while IFS= read -r f; do
+            syms=$(nm -a "$f" 2>/dev/null || true)
+            case "$syms" in *WeatherAHApp*) found_app=1;; esac
+            case "$syms" in *WeatherCore*) found_core=1;; esac
+          done < <(find "$APP" -type f)
+
+          if [ "$found_app" -ne 1 ]; then echo "アプリ側のコードが入っていません"; exit 1; fi
+          if [ "$found_core" -ne 1 ]; then echo "WeatherCore が入っていません"; exit 1; fi
+          echo "アプリ側のコードと WeatherCore の両方が入っています"

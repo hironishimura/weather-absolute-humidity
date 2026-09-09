@@ -1,0 +1,176 @@
+//  時系列グラフ（各社を重ねて表示）
+//
+//  横軸の時刻の刻みは WeatherCore の AxisTicks が決めます。
+//  Web版と同じ考え方で、せまいときは自動で粗くなります。
+
+import SwiftUI
+import Charts
+import WeatherCore
+
+struct ChartsSection: View {
+    @Environment(SettingsStore.self) private var settings
+    @Environment(WeatherStore.self) private var weather
+    @Binding var showColors: Bool
+
+    @State private var days = 2
+
+    private let ranges = [1, 2, 3, 7]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                SectionTitle("時系列（各社を重ねて表示）")
+                Spacer()
+                Button {
+                    showColors = true
+                } label: {
+                    Label("色を変える", systemImage: "paintpalette")
+                }
+                .font(.footnote)
+                .buttonStyle(.borderless)
+            }
+
+            Picker("表示範囲", selection: $days) {
+                ForEach(ranges, id: \.self) { d in
+                    Text("\(d)日").tag(d)
+                }
+            }
+            .pickerStyle(.segmented)
+
+            Legend()
+
+            ForEach(ChartField.allCases) { field in
+                FieldChart(field: field, days: days)
+            }
+
+            Text("過去24時間の実況と、これからの予報をひとつの軸に重ねています。"
+                 + "降水確率は刻みが提供元で違うため、階段の幅が変わります"
+                 + "（気象庁6時間・Yahoo!天気6時間・ウェザーニュース午前午後・数値予報1時間）。")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private struct Legend: View {
+        @Environment(SettingsStore.self) private var settings
+        var body: some View {
+            FlowRow(spacing: 12) {
+                ForEach(SourceKey.allCases) { key in
+                    HStack(spacing: 5) {
+                        Capsule()
+                            .fill(Color(hex: settings.hex(for: key)))
+                            .frame(width: 16, height: 3)
+                        Text(key.short + (key == .jma ? "" : "（予報）"))
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+        }
+    }
+
+    private struct FieldChart: View {
+        @Environment(SettingsStore.self) private var settings
+        @Environment(WeatherStore.self) private var weather
+        var field: ChartField
+        var days: Int
+
+        var body: some View {
+            let series = weather.series(for: field, days: days)
+            let now = Date()
+            let from = now.addingTimeInterval(-24 * 3600)
+            let to = now.addingTimeInterval(TimeInterval(days * 24 * 3600))
+
+            VStack(alignment: .leading, spacing: 6) {
+                Text("\(field.title)（\(field.unit)）")
+                    .font(.subheadline.weight(.semibold))
+
+                if series.isEmpty {
+                    Text("この項目を出せる提供元がありません。")
+                        .font(.caption).foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, minHeight: 80)
+                } else {
+                    GeometryReader { geo in
+                        let tick = AxisTicks.hours(span: Double(days + 1) * 24,
+                                                   usable: max(geo.size.width - 60, 60))
+                        chart(series: series, from: from, to: to, now: now, tick: tick)
+                    }
+                    .frame(height: field == .temp ? 210 : 160)
+                }
+            }
+            .padding(.vertical, 2)
+        }
+
+        @ViewBuilder
+        private func chart(series: [ChartSeries], from: Date, to: Date, now: Date,
+                           tick: AxisTicks.Hour) -> some View {
+            Chart {
+                ForEach(series) { s in
+                    ForEach(s.points) { p in
+                        LineMark(x: .value("時刻", p.time), y: .value(field.title, p.value))
+                            .foregroundStyle(Color(hex: settings.hex(for: s.key)))
+                            .interpolationMethod(field == .pop ? .stepEnd : .catmullRom)
+                    }
+                    .foregroundStyle(by: .value("提供元", s.key.short))
+                }
+                RuleMark(x: .value("いま", now))
+                    .lineStyle(StrokeStyle(lineWidth: 1, dash: [3, 3]))
+                    .foregroundStyle(.secondary)
+            }
+            .chartForegroundStyleScale(range: SourceKey.allCases.map {
+                Color(hex: settings.hex(for: $0))
+            })
+            .chartLegend(.hidden)
+            .chartXScale(domain: from...to)
+            .chartYScale(domain: yDomain(series))
+            .chartXAxis {
+                AxisMarks(values: AxisTicks.hourMarks(from: from, to: to, step: tick.step)) { value in
+                    AxisGridLine()
+                    AxisValueLabel {
+                        if let d = value.as(Date.self) {
+                            let hour = JST.parts(d).hour ?? 0
+                            if tick.step >= 24 {
+                                Text(Format.shortDate(d)).font(.caption2)
+                            } else {
+                                Text(tick.withUnit ? "\(hour)時" : "\(hour)")
+                                    .font(.caption2)
+                            }
+                        }
+                    }
+                }
+            }
+            .chartYAxis {
+                AxisMarks(position: .leading) { value in
+                    AxisGridLine()
+                    AxisValueLabel {
+                        if let v = value.as(Double.self) {
+                            Text(Format.number(v, field.digits)).font(.caption2)
+                        }
+                    }
+                }
+            }
+        }
+
+        private func yDomain(_ series: [ChartSeries]) -> ClosedRange<Double> {
+            if let fixed = field.fixedRange { return fixed }
+            let values = series.flatMap { $0.points.map(\.value) }
+            guard let lo = values.min(), let hi = values.max() else { return 0...1 }
+            let scale = AxisTicks.nice(min: lo, max: hi)
+            return scale.min...scale.max
+        }
+    }
+}
+
+/// 折り返す横並び。凡例に使います。
+struct FlowRow<Content: View>: View {
+    var spacing: CGFloat = 8
+    @ViewBuilder var content: Content
+
+    var body: some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: spacing) { content }
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: spacing)],
+                      alignment: .leading, spacing: 6) { content }
+        }
+    }
+}

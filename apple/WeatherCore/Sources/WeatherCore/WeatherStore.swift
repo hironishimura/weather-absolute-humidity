@@ -1,0 +1,294 @@
+//  取得したものをぜんぶ持っておく入れもの
+//
+//  画面はここを見て描くだけにしてあります。
+
+import Foundation
+import Observation
+
+@MainActor
+@Observable
+public final class WeatherStore {
+
+    // MARK: - 取ってきたもの
+
+    public private(set) var nows: [SourceKey: NowValue] = [:]
+    public private(set) var past: [HourlyRow] = []
+    public private(set) var future: [SourceKey: [HourlyRow]] = [:]
+    public private(set) var popBlocks: [SourceKey: [PopBlock]] = [:]
+    public private(set) var weekly: [SourceKey: [String: DailyForecast]] = [:]
+    public private(set) var jmaDaily: [DailyForecast] = []
+    public private(set) var station: Station?
+    public private(set) var officeName: String = ""
+    public private(set) var overview: String = ""
+    public private(set) var accuracy: AccuracyResult?
+    public private(set) var status: [StatusLine] = []
+    public private(set) var updatedAt: Date?
+
+    public private(set) var isLoading = false
+    public private(set) var place: Place?
+
+    // MARK: - 取りに行く相手
+
+    private let amedas: AmedasClient
+    private let forecast: ForecastClient
+    private let model: OpenMeteoClient
+    private let snapshot: SnapshotClient
+    private let accuracyClient: AccuracyClient
+
+    private var stationTable: [StationInfo] = []
+    private var officeNames: [String: String] = [:]
+
+    public init(fetcher: Fetching = URLSessionFetcher()) {
+        self.amedas = AmedasClient(fetcher: fetcher)
+        self.forecast = ForecastClient(fetcher: fetcher)
+        self.model = OpenMeteoClient(fetcher: fetcher)
+        self.snapshot = SnapshotClient(fetcher: fetcher)
+        self.accuracyClient = AccuracyClient(fetcher: fetcher)
+    }
+
+    // MARK: - まとめて読み直す
+
+    public func refresh(place: Place) async {
+        guard !isLoading else { return }
+        isLoading = true
+        self.place = place
+        nows = [:]
+        past = []
+        future = [:]
+        popBlocks = [:]
+        weekly = [:]
+        jmaDaily = []
+        station = nil
+        overview = ""
+        accuracy = nil
+        status = []
+
+        if stationTable.isEmpty {
+            stationTable = (try? await amedas.table()) ?? []
+        }
+        if officeNames.isEmpty {
+            officeNames = (try? await forecast.offices()) ?? [:]
+        }
+
+        await withTaskGroup(of: Void.self) { group in
+            group.addTask { await self.loadAmedas(place) }
+            group.addTask { await self.loadForecast(place) }
+            group.addTask { await self.loadModel(place) }
+            group.addTask { await self.loadSnapshot(place) }
+            group.addTask { await self.loadAccuracy(place) }
+        }
+
+        weekly = Aggregate.weekly(jmaDaily: jmaDaily,
+                                  modelRows: future[.model] ?? [],
+                                  snapshot: snapshotSources,
+                                  popBlocks: popBlocks)
+        updatedAt = Date()
+        isLoading = false
+    }
+
+    private var snapshotSources: [SnapshotSource] = []
+
+    // MARK: - それぞれ
+
+    private func loadAmedas(_ place: Place) async {
+        do {
+            let hit = try await amedas.current(place: place, table: stationTable)
+            station = hit.station
+            nows[.jma] = hit.now
+            setStatus("jma", SourceKey.jma.name, .ok,
+                      "\(hit.station.name)アメダス（約\(Format.km(hit.station.km))）／"
+                      + "\(Format.dateTime(hit.observedAt)) 現在"
+                      + (hit.hasHumidity ? "" : "　※この地点は湿度を観測していません"))
+            past = (try? await amedas.past24h(stationCode: hit.station.code,
+                                              observedAt: hit.observedAt)) ?? []
+        } catch {
+            setStatus("jma", SourceKey.jma.name, .failed,
+                      "取得できませんでした（\(error.localizedDescription)）")
+        }
+    }
+
+    private func loadForecast(_ place: Place) async {
+        do {
+            let r = try await forecast.load(place: place, officeNames: officeNames,
+                                            stations: stationTable)
+            jmaDaily = r.daily
+            popBlocks[.jma] = r.pops
+            officeName = r.officeName
+            overview = r.overview
+            setStatus("jma_forecast", "気象庁（府県天気予報）", .ok,
+                      "\(r.officeName)（\(r.officeCode)）の予報を読み込みました")
+        } catch {
+            setStatus("jma_forecast", "気象庁（府県天気予報）", .failed,
+                      "取得できませんでした（\(error.localizedDescription)）")
+        }
+    }
+
+    private func loadModel(_ place: Place) async {
+        do {
+            let r = try await model.load(place: place)
+            future[.model] = r.rows
+            if let now = r.now { nows[.model] = now }
+            setStatus("model", SourceKey.model.name, .ok,
+                      "\(r.rows.count)時間ぶんの予報を読み込みました"
+                      + (r.hasPop ? "（降水確率は Open-Meteo の総合予報）"
+                                  : "（降水確率は取れませんでした）"))
+        } catch {
+            setStatus("model", SourceKey.model.name, .failed,
+                      "取得できませんでした（\(error.localizedDescription)）")
+        }
+    }
+
+    private func loadSnapshot(_ place: Place) async {
+        do {
+            let r = try await snapshot.load(place: place)
+            if let why = r.missReason {
+                for key in [SourceKey.yahoo, .weathernews] {
+                    setStatus(key.rawValue, key.name, .notFetched, why)
+                }
+                setStatus("snapshot", "Yahoo!天気・ウェザーニュース（取り込みファイル）", .notFetched, why)
+                return
+            }
+            snapshotSources = r.sources
+            var got: [String] = []
+            for src in r.sources {
+                if !src.ok {
+                    setStatus(src.key.rawValue, src.key.name, .failed, src.error ?? "取得に失敗しています")
+                    continue
+                }
+                if let now = src.now { nows[src.key] = now }
+                if !src.rows.isEmpty { future[src.key] = src.rows }
+                if !src.pops.isEmpty { popBlocks[src.key] = src.pops }
+                got.append(src.key.name)
+
+                var kinds: [String] = []
+                if src.rows.contains(where: { $0.temp != nil }) { kinds.append("気温") }
+                if src.rows.contains(where: { $0.vh != nil }) { kinds.append("湿度") }
+                if src.rows.contains(where: { $0.pop != nil }) { kinds.append("降水確率") }
+                let body = src.rows.isEmpty
+                    ? "現在値のみ"
+                    : "\(src.rows.count)時間ぶんの予報（\(kinds.joined(separator: "・"))）"
+                let when = r.generatedAt.map { "（取得 \(Format.dateTime($0))）" } ?? ""
+                setStatus(src.key.rawValue, src.key.name, .ok,
+                          (src.label.isEmpty ? "" : src.label + "／") + body + when)
+            }
+            let near = (r.km ?? 0) > 0.5 ? "（約\(Format.km(r.km ?? 0))離れた取り込み地点）" : ""
+            setStatus("snapshot", "Yahoo!天気・ウェザーニュース（取り込みファイル）",
+                      got.isEmpty ? .notFetched : .ok,
+                      got.isEmpty
+                        ? "latest.json はありますが中身が空です"
+                        : (r.placeLabel.isEmpty ? "" : r.placeLabel + " の")
+                          + got.joined(separator: "・") + " を読み込みました" + near)
+        } catch {
+            for key in [SourceKey.yahoo, .weathernews] {
+                setStatus(key.rawValue, key.name, .notFetched, "未取得（サーバ側での取り込みが必要です）")
+            }
+            setStatus("snapshot", "Yahoo!天気・ウェザーニュース（取り込みファイル）", .notFetched,
+                      "取り込みファイルを読めませんでした（\(error.localizedDescription)）")
+        }
+    }
+
+    private func loadAccuracy(_ place: Place) async {
+        accuracy = try? await accuracyClient.load(place: place)
+    }
+
+    private func setStatus(_ key: String, _ name: String, _ state: StatusLine.State, _ message: String) {
+        let line = StatusLine(key: key, name: name, state: state, message: message)
+        if let i = status.firstIndex(where: { $0.key == key }) {
+            status[i] = line
+        } else {
+            status.append(line)
+        }
+    }
+
+    // MARK: - 画面から使うもの
+
+    public var average: AverageNow { Aggregate.average(nows) }
+
+    public var statusOrdered: [StatusLine] {
+        let order = ["jma", "jma_forecast", "model", "yahoo", "weathernews", "snapshot"]
+        return status.sorted {
+            (order.firstIndex(of: $0.key) ?? 99) < (order.firstIndex(of: $1.key) ?? 99)
+        }
+    }
+
+    public var weeklyDays: [String] { Aggregate.days(in: weekly) }
+
+    /// グラフに出す線。過去の実況（気象庁）と、これからの予報（各社）です。
+    public func series(for field: ChartField, days: Int) -> [ChartSeries] {
+        let now = Date()
+        let from = now.addingTimeInterval(-24 * 3600)
+        let to = now.addingTimeInterval(TimeInterval(days * 24 * 3600))
+
+        var out: [ChartSeries] = []
+        for key in SourceKey.allCases {
+            var rows: [HourlyRow] = []
+            if key == .jma {
+                rows = field == .pop ? Aggregate.popSteps(popBlocks[.jma] ?? []) : past
+            } else {
+                rows = future[key] ?? []
+                if field == .pop {
+                    let blocks = popBlocks[key] ?? []
+                    if !blocks.isEmpty { rows = Aggregate.popSteps(blocks) }
+                }
+            }
+            let points = rows
+                .filter { $0.time >= from && $0.time <= to }
+                .compactMap { row -> ChartPoint? in
+                    guard let v = field.value(row) else { return nil }
+                    return ChartPoint(time: row.time, value: v)
+                }
+            if !points.isEmpty {
+                out.append(ChartSeries(key: key, points: points))
+            }
+        }
+        return out
+    }
+}
+
+// MARK: - グラフに渡す形
+
+public enum ChartField: String, CaseIterable, Sendable, Identifiable {
+    case temp, rh, vh, pop
+
+    public var id: String { rawValue }
+
+    public var title: String {
+        switch self {
+        case .temp: return "気温"
+        case .rh: return "相対湿度"
+        case .vh: return "絶対湿度"
+        case .pop: return "降水確率"
+        }
+    }
+    public var unit: String {
+        switch self {
+        case .temp: return "℃"
+        case .rh: return "%"
+        case .vh: return "g/m³"
+        case .pop: return "%"
+        }
+    }
+    public var digits: Int { self == .temp || self == .vh ? 1 : 0 }
+    public var fixedRange: ClosedRange<Double>? { self == .pop ? 0...100 : nil }
+
+    func value(_ row: HourlyRow) -> Double? {
+        switch self {
+        case .temp: return row.temp
+        case .rh: return row.rh
+        case .vh: return row.vh
+        case .pop: return row.pop
+        }
+    }
+}
+
+public struct ChartPoint: Identifiable, Sendable {
+    public var time: Date
+    public var value: Double
+    public var id: Date { time }
+}
+
+public struct ChartSeries: Identifiable, Sendable {
+    public var key: SourceKey
+    public var points: [ChartPoint]
+    public var id: String { key.rawValue }
+}
