@@ -57,20 +57,19 @@ public enum Aggregate {
         var out: [String: DailyForecast] = [:]
         for r in rows {
             let key = JST.dayKey(r.time)
-            if out[key] == nil {
-                out[key] = DailyForecast(key: key, date: JST.startOfDay(r.time))
-            }
+            var day = out[key] ?? DailyForecast(key: key, date: JST.startOfDay(r.time))
             if let t = r.temp {
-                out[key]!.max = Swift.max(out[key]!.max ?? t, t)
-                out[key]!.min = Swift.min(out[key]!.min ?? t, t)
+                day.max = Swift.max(day.max ?? t, t)
+                day.min = Swift.min(day.min ?? t, t)
             }
             if let v = r.vh {
-                out[key]!.vhMax = Swift.max(out[key]!.vhMax ?? v, v)
-                out[key]!.vhMin = Swift.min(out[key]!.vhMin ?? v, v)
+                day.vhMax = Swift.max(day.vhMax ?? v, v)
+                day.vhMin = Swift.min(day.vhMin ?? v, v)
             }
             if let p = r.pop {
-                out[key]!.pop = Swift.max(out[key]!.pop ?? p, p)
+                day.pop = Swift.max(day.pop ?? p, p)
             }
+            out[key] = day
         }
         return out
     }
@@ -123,11 +122,13 @@ public enum Aggregate {
             let byDay = dailyPops(fromBlocks: blocks)
             var table = out[key] ?? [:]
             for (dayKey, pop) in byDay {
-                if table[dayKey] == nil {
-                    guard let date = JST.parseISO(dayKey + "T00:00:00+09:00") else { continue }
+                if var day = table[dayKey] {
+                    if day.pop == nil {
+                        day.pop = pop
+                        table[dayKey] = day
+                    }
+                } else if let date = JST.parseISO(dayKey + "T00:00:00+09:00") {
                     table[dayKey] = DailyForecast(key: dayKey, date: date, pop: pop)
-                } else if table[dayKey]!.pop == nil {
-                    table[dayKey]!.pop = pop
                 }
             }
             out[key] = table

@@ -90,7 +90,8 @@ public struct ForecastClient: Sendable {
                     guard let v = J.number(J.at(values, i)),
                           let text = J.string(iso), let t0 = JST.parseISO(text) else { continue }
                     if let key = slot(text) {
-                        days[key]?.pop = Swift.max(days[key]?.pop ?? -1, v)
+                        let current = days[key]?.pop
+                        days[key]?.pop = Swift.max(current ?? v, v)
                     }
                     pops.append(PopBlock(time: t0, hours: 6, pop: v))
                 }

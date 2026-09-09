@@ -85,8 +85,9 @@ public enum JST {
         if t.isEmpty { return nil }
         let hasZone = t.hasSuffix("Z") || t.range(of: #"[+-]\d{2}:?\d{2}$"#, options: .regularExpression) != nil
         let full = hasZone ? t : t + (t.count == 16 ? ":00+09:00" : "+09:00")
-        for options in [[ISO8601DateFormatter.Options.withInternetDateTime],
-                        [.withInternetDateTime, .withFractionalSeconds]] {
+        let plain: ISO8601DateFormatter.Options = [.withInternetDateTime]
+        let fractional: ISO8601DateFormatter.Options = [.withInternetDateTime, .withFractionalSeconds]
+        for options in [plain, fractional] {
             let f = ISO8601DateFormatter()
             f.formatOptions = options
             if let d = f.date(from: full) { return d }
