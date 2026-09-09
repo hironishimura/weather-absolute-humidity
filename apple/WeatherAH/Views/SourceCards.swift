@@ -10,7 +10,7 @@ struct SourceCards: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             SectionTitle("提供元ごとの値")
-            LazyVGrid(columns: [GridItem(.adaptive(minimum: 240), spacing: 14)], spacing: 14) {
+            LazyVGrid(columns: [.cards(minimum: 240)], spacing: 14) {
                 ForEach(SourceKey.allCases) { key in
                     Card(key: key,
                          color: Color(hex: settings.hex(for: key)),
@@ -26,38 +26,33 @@ struct SourceCards: View {
         var now: NowValue?
 
         var body: some View {
-            VStack(alignment: .leading, spacing: 10) {
-                HStack {
-                    Text(key.name).font(.subheadline.bold())
-                    Spacer()
-                    badge
-                }
-                if let now {
-                    HStack(alignment: .firstTextBaseline, spacing: 14) {
-                        value(Format.number(now.values.temp, 1), "℃")
-                        value(Format.number(now.values.rh, 0), "%")
-                        value(Format.number(now.values.vh, 1), "g/m³")
+            CardBox(accent: color) {
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack {
+                        Text(key.name).font(.subheadline.bold())
+                        Spacer()
+                        badge
                     }
-                    if let t = now.time {
-                        Text("\(Format.dateTime(t)) の値")
-                            .font(.caption2).foregroundStyle(.secondary)
+                    if let now {
+                        HStack(alignment: .firstTextBaseline, spacing: 14) {
+                            value(Format.number(now.values.temp, 1), "℃")
+                            value(Format.number(now.values.rh, 0), "%")
+                            value(Format.number(now.values.vh, 1), "g/m³")
+                        }
+                        if let t = now.time {
+                            Text("\(Format.dateTime(t)) の値")
+                                .font(.caption2).foregroundStyle(.secondary)
+                        }
+                    } else {
+                        Text("取得できていません")
+                            .font(.subheadline).foregroundStyle(.secondary)
+                            .padding(.vertical, 6)
                     }
-                } else {
-                    Text("取得できていません")
-                        .font(.subheadline).foregroundStyle(.secondary)
-                        .padding(.vertical, 6)
+                    Text(key.about)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
-                Text(key.about)
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(16)
-            .background(.background.secondary, in: RoundedRectangle(cornerRadius: 14))
-            .overlay(alignment: .top) {
-                Rectangle().fill(color).frame(height: 3)
-                    .clipShape(RoundedRectangle(cornerRadius: 2))
             }
         }
 

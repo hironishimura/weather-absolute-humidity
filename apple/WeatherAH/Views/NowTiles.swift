@@ -7,7 +7,7 @@ struct NowTiles: View {
     @Environment(WeatherStore.self) private var weather
 
     private var columns: [GridItem] {
-        [GridItem(.adaptive(minimum: 190), spacing: 14)]
+        [.cards(minimum: 190)]
     }
 
     var body: some View {
@@ -42,33 +42,24 @@ private struct Tile: View {
     var highlighted: Bool = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(title)
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.secondary)
-            HStack(alignment: .firstTextBaseline, spacing: 3) {
-                Text(value)
-                    .font(.system(size: 40, weight: .semibold, design: .rounded))
-                    .monospacedDigit()
-                    .minimumScaleFactor(0.6)
-                    .lineLimit(1)
-                Text(unit)
-                    .font(.caption)
+        CardBox(accent: highlighted ? Color.accentColor : nil) {
+            VStack(alignment: .leading, spacing: 6) {
+                Text(title)
+                    .font(.caption.weight(.semibold))
                     .foregroundStyle(.secondary)
-            }
-            Text(caption)
-                .font(.caption2)
-                .foregroundStyle(.secondary)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(16)
-        .background(.background.secondary, in: RoundedRectangle(cornerRadius: 14))
-        .overlay(alignment: .top) {
-            if highlighted {
-                RoundedRectangle(cornerRadius: 2)
-                    .fill(Color.accentColor)
-                    .frame(height: 3)
-                    .padding(.horizontal, 1)
+                HStack(alignment: .firstTextBaseline, spacing: 3) {
+                    Text(value)
+                        .font(.system(size: 40, weight: .semibold, design: .rounded))
+                        .monospacedDigit()
+                        .minimumScaleFactor(0.6)
+                        .lineLimit(1)
+                    Text(unit)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Text(caption)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
             }
         }
     }
@@ -81,7 +72,8 @@ struct SubValues: View {
     var body: some View {
         let avg = weather.average
         let jma = weather.nows[.jma]
-        LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 12)], spacing: 12) {
+        LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 12, alignment: .top)],
+                  spacing: 12) {
             Item("絶対湿度（重量）", Format.number(avg.mr, 1), "g/kg(DA)")
             Item("露点温度", Format.number(avg.dp, 1), "℃")
             Item("気圧（現地）", Format.number(avg.pressure, 1), "hPa")

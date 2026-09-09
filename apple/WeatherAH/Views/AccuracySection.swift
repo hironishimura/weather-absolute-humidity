@@ -15,7 +15,7 @@ struct AccuracySection: View {
                 Text(lead).font(.caption).foregroundStyle(.secondary)
             }
 
-            LazyVGrid(columns: [GridItem(.adaptive(minimum: 200), spacing: 14)], spacing: 14) {
+            LazyVGrid(columns: [.cards(minimum: 200)], spacing: 14) {
                 ForEach(SourceKey.allCases) { key in
                     Card(key: key,
                          color: Color(hex: settings.hex(for: key)),
@@ -95,31 +95,26 @@ struct AccuracySection: View {
         var score: AccuracyScore?
 
         var body: some View {
-            VStack(alignment: .leading, spacing: 8) {
-                Text(key.name).font(.caption.bold())
-                if let score {
-                    HStack(alignment: .firstTextBaseline, spacing: 2) {
-                        Text(Format.number(score.rate, 1))
-                            .font(.system(size: 30, weight: .semibold, design: .rounded))
-                            .monospacedDigit()
-                        Text("%").font(.caption2).foregroundStyle(.secondary)
+            CardBox(accent: color, padding: 14) {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(key.name).font(.caption.bold())
+                    if let score {
+                        HStack(alignment: .firstTextBaseline, spacing: 2) {
+                            Text(Format.number(score.rate, 1))
+                                .font(.system(size: 30, weight: .semibold, design: .rounded))
+                                .monospacedDigit()
+                            Text("%").font(.caption2).foregroundStyle(.secondary)
+                        }
+                        ProgressView(value: min(max(score.rate, 0), 100), total: 100)
+                            .tint(color)
+                        Text("\(score.n)期間のうち\(score.hit)回あたり／ブライアスコア \(Format.number(score.brier, 3))")
+                            .font(.caption2).foregroundStyle(.secondary)
+                    } else {
+                        Text("まだ数えられません").font(.subheadline).foregroundStyle(.secondary)
+                        Text("終わった期間の予報がまだ足りません。")
+                            .font(.caption2).foregroundStyle(.secondary)
                     }
-                    ProgressView(value: min(max(score.rate, 0), 100), total: 100)
-                        .tint(color)
-                    Text("\(score.n)期間のうち\(score.hit)回あたり／ブライアスコア \(Format.number(score.brier, 3))")
-                        .font(.caption2).foregroundStyle(.secondary)
-                } else {
-                    Text("まだ数えられません").font(.subheadline).foregroundStyle(.secondary)
-                    Text("終わった期間の予報がまだ足りません。")
-                        .font(.caption2).foregroundStyle(.secondary)
                 }
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(14)
-            .background(.background.secondary, in: RoundedRectangle(cornerRadius: 14))
-            .overlay(alignment: .top) {
-                Rectangle().fill(color).frame(height: 3)
-                    .clipShape(RoundedRectangle(cornerRadius: 2))
             }
         }
     }
