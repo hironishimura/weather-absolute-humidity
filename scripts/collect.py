@@ -335,6 +335,79 @@ def series_from_json(html):
 
 
 # =========================================================
+# 週間予報の読み取り
+# ---------------------------------------------------------
+# Yahoo!天気のページには「日付 / 天気 / 気温（℃） / 降水確率（％）」の
+# 表が載っています。そこから日ごとの予報を取り出します。
+# =========================================================
+MD_RE = re.compile(r"(\d{1,2})\s*月\s*(\d{1,2})\s*日")
+
+
+def _md_to_date(text, now):
+    """「9月11日(金)」から日付を作る。年をまたいでいたら翌年にする。"""
+    m = MD_RE.search(text or "")
+    if not m:
+        return None
+    month, day = int(m.group(1)), int(m.group(2))
+    for year in (now.year, now.year + 1, now.year - 1):
+        try:
+            d = datetime(year, month, day, tzinfo=JST)
+        except ValueError:
+            continue
+        if -40 <= (d - now).days <= 400:
+            return d
+    return None
+
+
+def weekly_from_html(html, now=None):
+    """日ごとの予報（天気・最高最低気温・降水確率）を取り出す。"""
+    now = now or datetime.now(JST)
+    for table in read_tables(html):
+        rows = {}
+        for row in table:
+            if len(row) < 3:
+                continue
+            head = (row[0] or "").replace(" ", "")
+            if "日付" in head and "date" not in rows:
+                rows["date"] = row[1:]
+            elif "天気" in head and "weather" not in rows:
+                rows["weather"] = row[1:]
+            elif ("気温" in head or "温度" in head) and "temp" not in rows:
+                rows["temp"] = row[1:]
+            elif "降水" in head and "確率" in head and "pop" not in rows:
+                rows["pop"] = row[1:]
+        if "date" not in rows or "temp" not in rows:
+            continue
+
+        out = []
+        for i, cell in enumerate(rows["date"]):
+            d = _md_to_date(cell, now)
+            if not d:
+                continue
+            item = {"date": d.date().isoformat()}
+            if "weather" in rows and i < len(rows["weather"]):
+                w = (rows["weather"][i] or "").strip()
+                if w:
+                    item["weather"] = w
+            nums = NUM_RE.findall(rows["temp"][i] or "") if i < len(rows["temp"]) else []
+            vals = [float(x) for x in nums if -60 <= float(x) <= 60]
+            if len(vals) >= 2:
+                item["temp_max"] = max(vals[0], vals[1])
+                item["temp_min"] = min(vals[0], vals[1])
+            elif len(vals) == 1:
+                item["temp_max"] = vals[0]
+            if "pop" in rows and i < len(rows["pop"]):
+                p = to_number(rows["pop"][i])
+                if p is not None and 0 <= p <= 100:
+                    item["pop"] = p
+            if len(item) > 1:
+                out.append(item)
+        if out:
+            return out
+    return []
+
+
+# =========================================================
 # 画面に出ている文字からの読み取り
 # ---------------------------------------------------------
 # ウェザーニュースの1時間ごと予報は表ではなく、画面側で組み立てられる
@@ -537,12 +610,16 @@ def collect_one(name, conf, html=None, now=None):
     if obs:
         ways.append("実況")
 
-    if not hourly and not obs:
+    if not hourly and not obs and not weekly_from_html(html, now=now):
         return {
             "ok": False,
             "url": url,
             "error": "ページから気温と湿度を読み取れませんでした（作りが変わった可能性があります）",
         }
+
+    weekly = weekly_from_html(html, now=now)
+    if weekly:
+        ways.append("週間")
 
     out = {
         "ok": True,
@@ -550,6 +627,7 @@ def collect_one(name, conf, html=None, now=None):
         "label": conf.get("label", ""),
         "strategy": "＋".join(ways),
         "hourly": hourly,
+        "weekly": weekly,
     }
     if obs:
         out["current"] = {

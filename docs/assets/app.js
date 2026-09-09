@@ -235,6 +235,12 @@ function fmtDate(d) {
   }).format(d);
 }
 
+/* 日本時間の日付キー（2026-09-09） */
+function jstKey(d) {
+  var j = new Date(d.getTime() + 9 * 3600e3);
+  return j.getUTCFullYear() + '-' + pad2(j.getUTCMonth() + 1) + '-' + pad2(j.getUTCDate());
+}
+
 var WIND_DIR = ['北','北北東','北東','東北東','東','東南東','南東','南南東','南','南南西','南西','西南西','西','西北西','北西','北北西'];
 function windText(row) {
   var spd = amedasValue(row, 'wind');
@@ -256,6 +262,7 @@ var state = {
   future: {},           /* 提供元ごとの時間別予報 */
   daily: [],            /* 気象庁の日別予報 */
   pops: [],             /* 気象庁の降水確率（6時間ごと） */
+  weekly: {},           /* 提供元ごとの日別予報（取り込みファイル） */
   overview: '',
   officeName: '',
   status: [],
@@ -566,7 +573,7 @@ function loadModel(place) {
       '&longitude=' + place.lon.toFixed(4) +
       '&hourly=temperature_2m,relative_humidity_2m,surface_pressure,precipitation_probability' +
       '&current=temperature_2m,relative_humidity_2m,surface_pressure' +
-      '&timezone=Asia%2FTokyo&forecast_days=7&past_days=1';
+      '&timezone=Asia%2FTokyo&forecast_days=10&past_days=1';
     return OPEN_METEO + q + (withModel ? '&models=jma_seamless' : '');
   }
 
@@ -653,6 +660,19 @@ function loadSnapshot() {
         });
         rows.sort(function (a, b) { return a.time - b.time; });
         if (rows.length) { state.future[key] = rows; }
+
+        var wk = [];
+        (s.weekly || []).forEach(function (d) {
+          if (!d.date) { return; }
+          wk.push({
+            key: String(d.date).slice(0, 10),
+            weather: d.weather || '',
+            max: isNum(d.temp_max) ? d.temp_max : null,
+            min: isNum(d.temp_min) ? d.temp_min : null,
+            pop: isNum(d.pop) ? d.pop : null
+          });
+        });
+        if (wk.length) { state.weekly[key] = wk; }
         got.push(SOURCES[key].name);
         var kinds = [];
         if (rows.some(function (r) { return isNum(r.temp); })) { kinds.push('気温'); }
@@ -1011,41 +1031,138 @@ function renderChart() {
   }
 }
 
-function renderDaily() {
-  var body = $('daily-body');
+/* 時間ごとの値を、日ごとにまとめる */
+function dailyFromHourly(rows) {
+  var by = {};
+  rows.forEach(function (r) {
+    var k = jstKey(r.time);
+    var d = by[k] || (by[k] = {
+      key: k, max: null, min: null, pop: null, vhMax: null, vhMin: null, derived: true
+    });
+    if (isNum(r.temp)) {
+      d.max = (d.max === null) ? r.temp : Math.max(d.max, r.temp);
+      d.min = (d.min === null) ? r.temp : Math.min(d.min, r.temp);
+    }
+    if (isNum(r.pop)) { d.pop = (d.pop === null) ? r.pop : Math.max(d.pop, r.pop); }
+    if (isNum(r.vh)) {
+      d.vhMax = (d.vhMax === null) ? r.vh : Math.max(d.vhMax, r.vh);
+      d.vhMin = (d.vhMin === null) ? r.vh : Math.min(d.vhMin, r.vh);
+    }
+  });
+  return by;
+}
+
+/* 提供元ごとの日別予報を、日付でそろえる */
+function buildWeekly() {
+  var byKey = { jma: {}, model: dailyFromHourly(state.future.model || []),
+                yahoo: {}, weathernews: {} };
+
+  state.daily.forEach(function (d) {
+    byKey.jma[jstKey(d.date)] = {
+      weather: d.weather || TELOP[d.code] || '',
+      max: isNum(d.max) ? d.max : null,
+      min: isNum(d.min) ? d.min : null,
+      pop: isNum(d.pop) ? d.pop : null
+    };
+  });
+
+  /* 週間表があればその値。ない日は時間ごとの予報から日ごとにまとめる */
+  ['yahoo', 'weathernews'].forEach(function (k) {
+    var out = dailyFromHourly(state.future[k] || []);
+    (state.weekly[k] || []).forEach(function (e) {
+      var d = out[e.key] || {};
+      out[e.key] = {
+        key: e.key,
+        weather: e.weather || d.weather || '',
+        max: isNum(e.max) ? e.max : d.max,
+        min: isNum(e.min) ? e.min : d.min,
+        pop: isNum(e.pop) ? e.pop : d.pop,
+        vhMax: d.vhMax, vhMin: d.vhMin,
+        derived: false
+      };
+    });
+    byKey[k] = out;
+  });
+
+  var keys = {};
+  Object.keys(byKey).forEach(function (k) {
+    Object.keys(byKey[k]).forEach(function (day) { keys[day] = true; });
+  });
+
+  var today = jstKey(new Date());
+  return {
+    days: Object.keys(keys).sort().filter(function (k) { return k >= today; }).slice(0, 10),
+    byKey: byKey
+  };
+}
+
+function weeklyCell(key, d) {
+  var td = el('td', 'w-cell');
+  if (!d) {
+    td.appendChild(el('span', 'w-none', '—'));
+    return td;
+  }
+  if (d.weather) { td.appendChild(el('p', 'w-w', d.weather)); }
+
+  var t = el('p', 'w-t');
+  if (isNum(d.max)) { t.appendChild(el('span', 'hi', fix(d.max, key === 'model' ? 1 : 0) + '℃')); }
+  if (isNum(d.min)) {
+    if (t.childNodes.length) { t.appendChild(document.createTextNode(' / ')); }
+    t.appendChild(el('span', 'lo', fix(d.min, key === 'model' ? 1 : 0) + '℃'));
+  }
+  if (t.childNodes.length) { td.appendChild(t); }
+
+  if (isNum(d.pop)) { td.appendChild(el('p', 'w-p', '降水 ' + fix(d.pop, 0) + '%')); }
+  if (isNum(d.vhMin) && isNum(d.vhMax)) {
+    td.appendChild(el('p', 'w-vh', '絶対湿度 ' + fix(d.vhMin, 1) + '〜' + fix(d.vhMax, 1) + ' g/m³'));
+  }
+  if (!td.childNodes.length) { td.appendChild(el('span', 'w-none', '—')); }
+  return td;
+}
+
+function renderWeekly() {
+  var body = $('weekly-body');
   body.innerHTML = '';
   $('fc-office').textContent = state.officeName
     ? state.officeName + 'の予報です。'
     : '予報区を特定できませんでした。';
   $('fc-overview').textContent = state.overview || '—';
 
-  if (!state.daily.length) {
+  Array.prototype.forEach.call(document.querySelectorAll('.wk-dot'), function (dot) {
+    var k = dot.getAttribute('data-src');
+    if (SOURCES[k]) { dot.style.background = SOURCES[k].color; }
+  });
+
+  var w = buildWeekly();
+  if (!w.days.length) {
     var tr = el('tr');
-    tr.appendChild(el('td', 'empty', '予報を取得できませんでした。'));
+    var td = el('td', 'empty', '予報を取得できませんでした。');
+    td.colSpan = 5;
+    tr.appendChild(td);
     body.appendChild(tr);
+    $('weekly-note').textContent = '';
     return;
   }
 
-  state.daily.forEach(function (d) {
+  var today = jstKey(new Date());
+  w.days.forEach(function (day) {
     var tr = el('tr');
-    tr.appendChild(el('td', 'd-date', fmtDate(d.date)));
-    tr.appendChild(el('td', 'd-w', d.weather || (TELOP[d.code] || '—')));
-
-    var t = el('td', 'd-t');
-    if (isNum(d.max)) {
-      var hi = el('span', 'hi', d.max + '℃');
-      t.appendChild(hi);
-    }
-    if (isNum(d.min)) {
-      if (t.childNodes.length) { t.appendChild(document.createTextNode(' / ')); }
-      t.appendChild(el('span', 'lo', d.min + '℃'));
-    }
-    if (!t.childNodes.length) { t.textContent = '—'; }
-    tr.appendChild(t);
-
-    tr.appendChild(el('td', 'd-p', isNum(d.pop) ? d.pop + '%' : '—'));
+    var d = new Date(day + 'T00:00:00+09:00');
+    var dateCell = el('td', 'w-date' + (day === today ? ' is-today' : ''), fmtDate(d));
+    tr.appendChild(dateCell);
+    ['jma', 'model', 'yahoo', 'weathernews'].forEach(function (k) {
+      tr.appendChild(weeklyCell(k, w.byKey[k][day]));
+    });
     body.appendChild(tr);
   });
+
+  var have = ['jma', 'model', 'yahoo', 'weathernews'].filter(function (k) {
+    return Object.keys(w.byKey[k]).length > 0;
+  }).map(function (k) { return SOURCES[k].name; });
+  $('weekly-note').textContent =
+    '気温は日ごとの最高／最低です。気象庁は発表値、気象庁MSM/GSMは1時間ごとの予報から' +
+    'まとめた計算値です。Yahoo!天気とウェザーニュースは、週間表のある日はその値、' +
+    'ない日は時間ごとの予報からまとめた値になります。取得できた提供元：' + have.join('・') + '。';
 }
 
 function renderStatus() {
@@ -1074,7 +1191,7 @@ function renderAll() {
   renderNow();
   renderSources();
   renderChart();
-  renderDaily();
+  renderWeekly();
   renderStatus();
 }
 
@@ -1127,6 +1244,7 @@ function refresh() {
   state.past = [];
   state.daily = [];
   state.pops = [];
+  state.weekly = {};
   state.status = [];
   state.station = null;
   renderStatus();
