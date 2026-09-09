@@ -80,7 +80,7 @@ struct ChartsSection: View {
         var body: some View {
             let series = weather.series(for: field, days: days)
             let now = Date()
-            let from = now.addingTimeInterval(-24 * 3600)
+            let from = now.addingTimeInterval(-ChartWindow.pastSeconds)
             let to = now.addingTimeInterval(TimeInterval(days * 24 * 3600))
 
             VStack(alignment: .leading, spacing: 6) {
@@ -93,7 +93,7 @@ struct ChartsSection: View {
                         .frame(maxWidth: .infinity, minHeight: 80)
                 } else {
                     GeometryReader { geo in
-                        let tick = AxisTicks.hours(span: Double(days + 1) * 24,
+                        let tick = AxisTicks.hours(span: ChartWindow.span(days: days),
                                                    usable: max(geo.size.width - 60, 60))
                         chart(series: series, from: from, to: to, now: now, tick: tick)
                     }

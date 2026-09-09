@@ -211,12 +211,16 @@ public final class WeatherStore {
         }
     }
 
-    public var weeklyDays: [String] { Aggregate.days(in: weekly) }
+    /// 1週間の表に出す日付。過ぎた日は出しません。
+    public var weeklyDays: [String] {
+        let today = JST.dayKey(Date())
+        return Aggregate.days(in: weekly).filter { $0 >= today }
+    }
 
     /// グラフに出す線。過去の実況（気象庁）と、これからの予報（各社）です。
     public func series(for field: ChartField, days: Int) -> [ChartSeries] {
         let now = Date()
-        let from = now.addingTimeInterval(-24 * 3600)
+        let from = now.addingTimeInterval(-ChartWindow.pastSeconds)
         let to = now.addingTimeInterval(TimeInterval(days * 24 * 3600))
 
         var out: [ChartSeries] = []
@@ -247,6 +251,18 @@ public final class WeatherStore {
 }
 
 // MARK: - グラフに渡す形
+
+/// グラフに出す時間の幅
+public enum ChartWindow {
+    /// 過去はここまで（実況の直近ぶんだけ出します）
+    public static let pastHours: Double = 1
+    public static let pastSeconds: TimeInterval = pastHours * 3600
+
+    /// 「N日」表示のときの全体の幅（時間）
+    public static func span(days: Int) -> Double {
+        Double(days) * 24 + pastHours
+    }
+}
 
 public enum ChartField: String, CaseIterable, Sendable, Identifiable {
     case temp, rh, vh, pop, precip
