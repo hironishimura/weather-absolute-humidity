@@ -1,12 +1,12 @@
 {
-  "generated_at": "2026-09-09T17:03:22.878493+09:00",
+  "generated_at": "2026-09-09T17:59:12.188479+09:00",
   "label": "栃木県宇都宮市",
   "sources": {
     "yahoo": {
       "ok": true,
       "url": "https://weather.yahoo.co.jp/weather/jp/9/4110/9201.html",
       "label": "栃木県宇都宮市",
-      "strategy": "table×2",
+      "strategy": "table×2＋週間",
       "hourly": [
         {
           "time": "2026-09-09T00:00:00+09:00",
@@ -87,6 +87,50 @@
           "time": "2026-09-10T21:00:00+09:00",
           "temp": 20.0,
           "humidity": 83.0
+        }
+      ],
+      "weekly": [
+        {
+          "date": "2026-09-11",
+          "weather": "曇時々雨",
+          "temp_max": 23.0,
+          "temp_min": 18.0,
+          "pop": 70.0
+        },
+        {
+          "date": "2026-09-12",
+          "weather": "曇り",
+          "temp_max": 25.0,
+          "temp_min": 20.0,
+          "pop": 40.0
+        },
+        {
+          "date": "2026-09-13",
+          "weather": "曇り",
+          "temp_max": 28.0,
+          "temp_min": 22.0,
+          "pop": 20.0
+        },
+        {
+          "date": "2026-09-14",
+          "weather": "曇時々晴",
+          "temp_max": 32.0,
+          "temp_min": 24.0,
+          "pop": 40.0
+        },
+        {
+          "date": "2026-09-15",
+          "weather": "曇一時雨",
+          "temp_max": 27.0,
+          "temp_min": 22.0,
+          "pop": 60.0
+        },
+        {
+          "date": "2026-09-16",
+          "weather": "曇一時雨",
+          "temp_max": 26.0,
+          "temp_min": 21.0,
+          "pop": 50.0
         }
       ],
       "current": {
@@ -324,7 +368,7 @@
         },
         {
           "time": "2026-09-09T20:00:00+09:00",
-          "temp": 20.0
+          "temp": 19.0
         },
         {
           "time": "2026-09-09T21:00:00+09:00",
@@ -603,11 +647,12 @@
           "temp": 24.0
         }
       ],
+      "weekly": [],
       "current": {
-        "time": "2026-09-09T17:04:00+09:00",
-        "temp": 21.5,
+        "time": "2026-09-09T17:59:00+09:00",
+        "temp": 20.9,
         "humidity": 95.0,
-        "pressure": 991.0
+        "pressure": 992.0
       },
       "current_is_forecast": false
     }
