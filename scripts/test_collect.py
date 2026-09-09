@@ -8,6 +8,7 @@
 """
 
 import os
+import re
 import sys
 import unittest
 from datetime import datetime, timedelta, timezone
@@ -15,6 +16,7 @@ from datetime import datetime, timedelta, timezone
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import collect  # noqa: E402
 import collect_browser  # noqa: E402
+import verify  # noqa: E402
 
 JST = timezone(timedelta(hours=9))
 NOW = datetime(2026, 9, 8, 14, 30, tzinfo=JST)
@@ -458,6 +460,282 @@ class ブラウザで読んだ結果の扱い(unittest.TestCase):
         new = {"ok": True, "hourly": [1], "strategy": "実況"}
         collect_browser.pick_better(old, new)
         self.assertEqual(new["strategy"], "実況")
+
+
+# =========================================================
+# verify.py（降水確率の当たり具合）
+# =========================================================
+NOW_V = datetime(2026, 9, 9, 15, 0, tzinfo=JST)
+
+
+class 期間の切り方(unittest.TestCase):
+    def test_7日前から3日前は1日ごと(self):
+        got = verify.periods(NOW_V)
+        day = [(s, h) for (s, h) in got if h == 24]
+        self.assertEqual(len(day), 4)
+        self.assertEqual(day[0][0], datetime(2026, 9, 2, 0, 0, tzinfo=JST))
+        self.assertEqual(day[-1][0], datetime(2026, 9, 5, 0, 0, tzinfo=JST))
+
+    def test_直近3日は半日ごと(self):
+        got = verify.periods(NOW_V)
+        half = [(s, h) for (s, h) in got if h == 12]
+        # 6日〜8日の午前午後で6つ、9日は午前だけ終わっている
+        self.assertEqual(len(half), 7)
+        self.assertEqual(half[0][0], datetime(2026, 9, 6, 0, 0, tzinfo=JST))
+        self.assertEqual(half[-1][0], datetime(2026, 9, 9, 0, 0, tzinfo=JST))
+
+    def test_終わっていない期間は返さない(self):
+        for start, hours in verify.periods(NOW_V):
+            self.assertLessEqual(start + timedelta(hours=hours), NOW_V)
+
+    def test_順番は古いものから(self):
+        got = verify.periods(NOW_V)
+        self.assertEqual(got, sorted(got))
+
+
+class 予報の書きため(unittest.TestCase):
+    LATEST = {
+        "places": [{
+            "id": "utsunomiya", "label": "栃木県宇都宮市",
+            "sources": {
+                "jma": {"ok": True,
+                        "pops": [{"time": "2026-09-10T06:00:00+09:00", "hours": 6, "pop": 30}],
+                        "weekly": [{"date": "2026-09-11", "pop": 60}]},
+                "yahoo": {"ok": False, "pops": [{"time": "2026-09-10T06:00:00+09:00",
+                                                 "hours": 6, "pop": 10}]},
+            },
+        }],
+    }
+
+    def test_取り出せる(self):
+        got = verify.forecasts_in(self.LATEST)
+        self.assertIn(("utsunomiya", "jma", "2026-09-10T06:00:00+09:00", 6, 30.0), got)
+        self.assertIn(("utsunomiya", "jma", "2026-09-11T00:00:00+09:00", 24, 60.0), got)
+
+    def test_失敗した提供元は使わない(self):
+        got = verify.forecasts_in(self.LATEST)
+        self.assertFalse([g for g in got if g[1] == "yahoo"])
+
+    def test_降水確率がないものは飛ばす(self):
+        latest = {"places": [{"id": "a", "sources": {"jma": {"ok": True, "pops": [
+            {"time": "2026-09-10T06:00:00+09:00", "hours": 6, "pop": None},
+            {"time": "2026-09-10T12:00:00+09:00", "hours": 6, "pop": "--"},
+        ]}}}]}
+        self.assertEqual(verify.forecasts_in(latest), [])
+
+    def test_書きためて始まる前の予報を残す(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as d:
+            verify.HISTORY = os.path.join(d, "history.json")
+            added, total = verify.record(self.LATEST, NOW_V)
+            self.assertEqual(added, 2)
+            self.assertEqual(total, 2)
+            # もう一度やっても増えない（同じ期間は上書き）
+            added, total = verify.record(self.LATEST, NOW_V)
+            self.assertEqual(total, 2)
+
+    def test_もう始まっている期間は記録しない(self):
+        import tempfile
+        latest = {"places": [{"id": "a", "sources": {"jma": {"ok": True, "pops": [
+            {"time": "2026-09-09T06:00:00+09:00", "hours": 6, "pop": 40},
+        ]}}}]}
+        with tempfile.TemporaryDirectory() as d:
+            verify.HISTORY = os.path.join(d, "history.json")
+            added, total = verify.record(latest, NOW_V)
+            self.assertEqual(added, 0)
+
+
+class 予報の取り出し(unittest.TestCase):
+    ENTRIES = {
+        "a|jma|2026-09-08T00:00:00+09:00|6": {"pop": 10},
+        "a|jma|2026-09-08T06:00:00+09:00|6": {"pop": 70},
+        "a|jma|2026-09-08T12:00:00+09:00|6": {"pop": 20},
+        "a|yahoo|2026-09-08T00:00:00+09:00|24": {"pop": 50},
+        "b|jma|2026-09-08T00:00:00+09:00|6": {"pop": 90},
+    }
+
+    def test_重なる区切りの最大値をとる(self):
+        got = verify.pop_for(self.ENTRIES, "a", "jma",
+                             datetime(2026, 9, 8, 0, 0, tzinfo=JST), 12)
+        self.assertEqual(got, 70)
+
+    def test_地点と提供元がちがえば使わない(self):
+        got = verify.pop_for(self.ENTRIES, "a", "weathernews",
+                             datetime(2026, 9, 8, 0, 0, tzinfo=JST), 12)
+        self.assertIsNone(got)
+        got = verify.pop_for(self.ENTRIES, "b", "jma",
+                             datetime(2026, 9, 8, 0, 0, tzinfo=JST), 12)
+        self.assertEqual(got, 90)
+
+    def test_重なっていなければ使わない(self):
+        got = verify.pop_for(self.ENTRIES, "a", "jma",
+                             datetime(2026, 9, 9, 0, 0, tzinfo=JST), 12)
+        self.assertIsNone(got)
+
+    def test_1日の予報は半日にも使える(self):
+        got = verify.pop_for(self.ENTRIES, "a", "yahoo",
+                             datetime(2026, 9, 8, 12, 0, tzinfo=JST), 12)
+        self.assertEqual(got, 50)
+
+
+class 正解率(unittest.TestCase):
+    def setUp(self):
+        self.entries = {}
+        self.cache = {}
+        for i, (pop_jma, pop_yahoo, mm) in enumerate([
+            (80, 20, 5.0),    # 降った → 気象庁は当たり、Yahoo!ははずれ
+            (10, 10, 0.0),    # 降らない → どちらも当たり
+            (60, 70, 0.0),    # 降らない → どちらもはずれ
+            (0, 90, 3.0),     # 降った → 気象庁はずれ、Yahoo!当たり
+        ]):
+            start = datetime(2026, 9, 2, 0, 0, tzinfo=JST) + timedelta(days=i)
+            self.entries["a|jma|%s|24" % start.isoformat()] = {"pop": pop_jma}
+            self.entries["a|yahoo|%s|24" % start.isoformat()] = {"pop": pop_yahoo}
+            self.cache["%s|24" % start.isoformat()] = {"mm": mm, "rain": mm >= 1.0}
+
+    def test_当たった数を数える(self):
+        rows, scores = verify.score("a", None, self.entries, self.cache,
+                                    now=NOW_V, fetch=False)
+        self.assertEqual(scores["jma"]["n"], 4)
+        self.assertEqual(scores["jma"]["hit"], 2)
+        self.assertEqual(scores["jma"]["rate"], 50.0)
+        self.assertEqual(scores["yahoo"]["hit"], 2)
+
+    def test_ブライアスコア(self):
+        rows, scores = verify.score("a", None, self.entries, self.cache,
+                                    now=NOW_V, fetch=False)
+        # ((0.8-1)^2 + (0.1-0)^2 + (0.6-0)^2 + (0.0-1)^2) / 4 = 1.41 / 4
+        self.assertEqual(scores["jma"]["brier"], 0.352)   # 1.41 / 4 = 0.3525 を小数3桁に
+
+    def test_記録がなければ出さない(self):
+        rows, scores = verify.score("a", None, {}, self.cache, now=NOW_V, fetch=False)
+        self.assertEqual(scores, {})
+        self.assertEqual(rows, [])
+
+    def test_実際の雨がわからない期間は飛ばす(self):
+        rows, scores = verify.score("a", None, self.entries, {}, now=NOW_V, fetch=False)
+        self.assertEqual(rows, [])
+
+    def test_予報のない期間は雨量を見に行かない(self):
+        calls = []
+        orig = verify.rain_mm
+        verify.rain_mm = lambda st, s, h: (calls.append(s), 0.0)[1]
+        try:
+            verify.score("a", "41277", self.entries, {}, now=NOW_V, fetch=True)
+        finally:
+            verify.rain_mm = orig
+        # 予報を入れた4期間だけ（半日の期間には予報がない）
+        self.assertEqual(len(calls), 4)
+
+    def test_期間の中身(self):
+        rows, _ = verify.score("a", None, self.entries, self.cache,
+                               now=NOW_V, fetch=False)
+        self.assertEqual(len(rows), 4)
+        self.assertEqual(rows[0]["hours"], 24)
+        self.assertTrue(rows[0]["rain"])
+        self.assertEqual(rows[0]["pops"]["jma"], 80)
+
+
+class 予報区の選び方(unittest.TestCase):
+    def test_近い予報区を選ぶ(self):
+        self.assertEqual(verify.resolve_office(36.5551, 139.8828), "090000")   # 栃木県
+        self.assertEqual(verify.resolve_office(35.6812, 139.7671), "130000")   # 東京都
+
+    def test_アプリ側の表と中身が同じ(self):
+        here = os.path.dirname(os.path.abspath(__file__))
+        js = os.path.join(os.path.dirname(here), "docs/assets/app.js")
+        with open(js, encoding="utf-8") as f:
+            src = f.read()
+        body = re.search(r"var OFFICES = \[(.*?)\n\];", src, re.S).group(1)
+        found = re.findall(r"\['[^']+','(\d+)',([\d.]+),([\d.]+)\]", body)
+        self.assertEqual(len(found), len(verify.OFFICES))
+        for (code, la, lo), (c2, la2, lo2) in zip(found, verify.OFFICES):
+            self.assertEqual(code, c2)
+            self.assertAlmostEqual(float(la), la2, places=2)
+            self.assertAlmostEqual(float(lo), lo2, places=2)
+
+
+class 気象庁の降水確率(unittest.TestCase):
+    FORECAST = [
+        {"timeSeries": [
+            {"timeDefines": ["2026-09-09T17:00:00+09:00"],
+             "areas": [{"area": {"code": "090010"}, "weathers": ["くもり"]}]},
+            {"timeDefines": ["2026-09-09T18:00:00+09:00", "2026-09-10T00:00:00+09:00",
+                             "2026-09-10T06:00:00+09:00"],
+             "areas": [{"area": {"code": "090010"}, "pops": ["20", "", "60"]}]},
+        ]},
+        {"timeSeries": [
+            {"timeDefines": ["2026-09-11T00:00:00+09:00", "2026-09-12T00:00:00+09:00"],
+             "areas": [{"area": {"code": "090000"}, "pops": ["", "30"]}]},
+        ]},
+    ]
+
+    def setUp(self):
+        self.calls = []
+        self.orig = verify.get_json
+        verify.get_json = lambda url: (self.calls.append(url), self.FORECAST)[1]
+
+    def tearDown(self):
+        verify.get_json = self.orig
+
+    def test_6時間ごとと1日ごとを取り出す(self):
+        got = verify.jma_pops({"lat": 36.5551, "lon": 139.8828})
+        self.assertEqual(len(got), 3)
+        self.assertEqual(got[0], (datetime(2026, 9, 9, 18, 0, tzinfo=JST), 6, 20.0))
+        self.assertEqual(got[1], (datetime(2026, 9, 10, 6, 0, tzinfo=JST), 6, 60.0))
+        self.assertEqual(got[2], (datetime(2026, 9, 12, 0, 0, tzinfo=JST), 24, 30.0))
+
+    def test_空欄は飛ばす(self):
+        got = verify.jma_pops({"lat": 36.5551, "lon": 139.8828})
+        self.assertNotIn(datetime(2026, 9, 10, 0, 0, tzinfo=JST), [g[0] for g in got])
+
+    def test_予報区を指定できる(self):
+        verify.jma_pops({"lat": 0, "lon": 0, "office": "130000"})
+        self.assertIn("130000", self.calls[0])
+
+
+class 数値予報の降水確率(unittest.TestCase):
+    METEO = {"hourly": {
+        "time": ["2026-09-09T18:00", "2026-09-09T19:00", "2026-09-09T20:00"],
+        "precipitation_probability": [10, None, 40],
+    }}
+
+    def setUp(self):
+        self.calls = []
+        self.orig = verify.get_json
+        verify.get_json = lambda url: (self.calls.append(url), self.METEO)[1]
+
+    def tearDown(self):
+        verify.get_json = self.orig
+
+    def test_1時間ごとに取り出す(self):
+        got = verify.model_pops({"lat": 36.5551, "lon": 139.8828})
+        self.assertEqual(len(got), 2)
+        self.assertEqual(got[0], (datetime(2026, 9, 9, 18, 0, tzinfo=JST), 1, 10.0))
+        self.assertEqual(got[1], (datetime(2026, 9, 9, 20, 0, tzinfo=JST), 1, 40.0))
+
+    def test_モデルは指定しない(self):
+        # 気象庁のモデルを指定すると降水確率が空で返るため、指定しません
+        verify.model_pops({"lat": 36.5551, "lon": 139.8828})
+        self.assertNotIn("models=", self.calls[0])
+        self.assertIn("precipitation_probability", self.calls[0])
+
+
+class 直接読む予報(unittest.TestCase):
+    def test_読めなくても止まらない(self):
+        orig = verify.get_json
+
+        def boom(url):
+            raise OSError("つながりません")
+        verify.get_json = boom
+        try:
+            got = verify.direct_forecasts([{"id": "a", "lat": 36.5, "lon": 139.8}])
+        finally:
+            verify.get_json = orig
+        self.assertEqual(got, [])
+
+    def test_緯度経度がなければ飛ばす(self):
+        self.assertEqual(verify.direct_forecasts([{"id": "a"}]), [])
 
 
 if __name__ == "__main__":

@@ -8,7 +8,7 @@
 <meta name="theme-color" content="#101418">
 <title>気温・湿度・絶対湿度 ｜ 現在地の実況と予報</title>
 <meta name="description" content="現在地の気温・相対湿度・絶対湿度（容積／重量）・露点を、気象庁・Yahoo!天気・ウェザーニュースのデータから表示します。">
-<link rel="stylesheet" href="./assets/app.css?v=c5c993ab">
+<link rel="stylesheet" href="./assets/app.css?v=6b6b9ac7">
 </head>
 <body>
 
@@ -156,6 +156,36 @@
     </details>
   </section>
 
+  <!-- ============ 降水確率の当たり具合 ============ -->
+  <section class="card" aria-label="降水確率の当たり具合">
+    <div class="card__head">
+      <h2>降水確率の当たり具合</h2>
+      <p class="lead" id="acc-lead">—</p>
+    </div>
+    <div class="acc" id="acc-cards"></div>
+    <details class="acc__detail">
+      <summary>期間ごとの内訳</summary>
+      <div class="tablewrap">
+        <table class="weekly weekly--acc">
+          <thead>
+            <tr>
+              <th>期間</th>
+              <th>雨量</th>
+              <th><span class="wk-dot" data-src="jma"></span>気象庁</th>
+              <th><span class="wk-dot" data-src="model"></span>気象庁MSM/GSM</th>
+              <th><span class="wk-dot" data-src="yahoo"></span>Yahoo!天気</th>
+              <th><span class="wk-dot" data-src="weathernews"></span>ウェザーニュース</th>
+            </tr>
+          </thead>
+          <tbody id="acc-body">
+            <tr><td colspan="6" class="empty">読み込み中…</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </details>
+    <p class="note" id="acc-note">&nbsp;</p>
+  </section>
+
   <!-- ============ 結露チェック ============ -->
   <section class="card" aria-label="結露チェック">
     <h2>結露チェック</h2>
@@ -208,6 +238,6 @@
 
 </main>
 
-<script src="./assets/app.js?v=8a3f4f16" defer></script>
+<script src="./assets/app.js?v=f1e10735" defer></script>
 </body>
 </html>

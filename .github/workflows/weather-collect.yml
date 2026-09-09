@@ -65,17 +65,27 @@ jobs:
           python3 -m playwright install --with-deps chromium
           python3 scripts/collect_browser.py
 
+      - name: 降水確率の当たり具合を数える
+        # いまの予報を history.json に書きため、終わった期間について
+        # アメダスの実際の降水量とつき合わせます。
+        # 過去の予報はあとから取り寄せられないので、
+        # ここが動きはじめてから1週間ほどで数字がそろいます。
+        if: inputs.dry-run != true
+        continue-on-error: true
+        timeout-minutes: 10
+        run: python3 scripts/verify.py
+
       - name: 変わっていれば記録する
         if: inputs.dry-run != true
         run: |
-          FILE=docs/data/latest.json
-          if [ -z "$(git status --porcelain -- $FILE)" ]; then
+          FILES="docs/data/latest.json docs/data/history.json docs/data/accuracy.json"
+          if [ -z "$(git status --porcelain -- $FILES)" ]; then
             echo "内容に変化がないためコミットしません。"
             exit 0
           fi
           git config user.name  "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add $FILE
+          git add $FILES
           git commit -m "更新: 気温・湿度の取り込みデータ"
           git pull --rebase --autostash
           git push

@@ -54,6 +54,13 @@ const meteo = {
     surface_pressure: [1001.8, 1001.5, 1001.2, 1001.0]
   }
 };
+/* 降水確率はモデルを指定しない問い合わせで返ってくる */
+const meteoPops = {
+  hourly: {
+    time: ['2026-09-08T13:00', '2026-09-08T14:00', '2026-09-08T15:00', '2026-09-08T16:00'],
+    precipitation_probability: [60, 40, 10, 0]
+  }
+};
 const snapshot = {
   generated_at: '2026-09-08T14:05:00+09:00',
   sources: {
@@ -74,7 +81,11 @@ ctx.getJSON = function (url, opt) {
   if (url.indexOf('/map/20260908141000.json') >= 0) { return Promise.resolve(map); }
   if (url.indexOf('/point/41277/20260908_12.json') >= 0) { return Promise.resolve(point); }
   if (url.indexOf('/point/') >= 0) { return Promise.reject(new Error('HTTP 404')); }
-  if (url.indexOf('open-meteo') >= 0) { return Promise.resolve(meteo); }
+  if (url.indexOf('open-meteo') >= 0) {
+    /* 降水確率だけを頼んだときは、そちらの応答を返す */
+    if (url.indexOf('temperature_2m') < 0) { return Promise.resolve(meteoPops); }
+    return Promise.resolve(meteo);
+  }
   if (url.indexOf('latest.json') >= 0) { return Promise.resolve(snapshot); }
   return Promise.reject(new Error('未知のURL ' + url));
 };
@@ -105,13 +116,20 @@ ctx.loadAmedas(place).then(function (hit) {
   ok('404 のブロックは無視される', true);
 
   console.log('\n■ 数値予報（Open-Meteo）');
+  requested = [];
   return ctx.loadModel(place);
 }).then(function () {
   const f = ctx.state.future.model;
   ok('欠測の時刻を落として3点', f.length === 3, f.length);
   ok('日本時間として読む', f[0].time.toISOString() === '2026-09-08T04:00:00.000Z', f[0].time.toISOString());
   ok('現在値も取れる', near(ctx.state.now.model.values.temp, 24.6, 0.001));
-  ok('モデル指定つきで要求する', requested.some(u => u.indexOf('models=jma_seamless') >= 0));
+  ok('気温と湿度はモデル指定つきで要求する',
+     requested.some(u => u.indexOf('models=jma_seamless') >= 0 && u.indexOf('temperature_2m') >= 0));
+  ok('降水確率はモデル指定なしで別に要求する',
+     requested.some(u => u.indexOf('precipitation_probability') >= 0 && u.indexOf('models=') < 0),
+     requested.join('\n     '));
+  ok('降水確率が予報に入る', f[0].pop === 60 && f[2].pop === 10,
+     f.map(r => r.pop).join(','));
 
   console.log('\n■ 取り込みファイル');
   return ctx.loadSnapshot();
@@ -167,13 +185,69 @@ ctx.loadAmedas(place).then(function (hit) {
   ok('未取得として扱う', ctx.state.status.find(s => s.key === 'yahoo').ok === null);
   ok('直し方が書いてある', ctx.state.status.find(s => s.key === 'snapshot').msg.indexOf('collect.py') > 0);
 
-  console.log('\n■ 数値予報が落ちたとき');
+  console.log('\n■ 降水確率の当たり具合');
+  const accuracy = {
+    updated_at: '2026-09-09T15:10:00+09:00', rain_mm: 1, say_rain: 50,
+    places: [
+      { id: 'tokyo', label: '東京都千代田区', lat: 35.6812, lon: 139.7671,
+        station: '東京', periods: [], scores: {} },
+      { id: 'utsunomiya', label: '栃木県宇都宮市', lat: 36.5551, lon: 139.8828,
+        station: '宇都宮',
+        periods: [
+          { start: '2026-09-02T00:00:00+09:00', hours: 24, mm: 5.0, rain: true,
+            pops: { jma: 80, yahoo: 20 } },
+          { start: '2026-09-09T00:00:00+09:00', hours: 12, mm: 0.0, rain: false,
+            pops: { jma: 10 } }
+        ],
+        scores: { jma: { n: 2, hit: 2, rate: 100.0, brier: 0.025 },
+                  yahoo: { n: 1, hit: 0, rate: 0.0, brier: 0.64 } } }
+    ]
+  };
+  ctx.state.place = { id: 'utsunomiya', lat: 36.5551, lon: 139.8828 };
+  ctx.getJSON = () => Promise.resolve(accuracy);
+  return ctx.loadAccuracy().then(() => {
+    ok('idが同じ地点を選ぶ', ctx.state.accuracy.place.id === 'utsunomiya',
+       ctx.state.accuracy.place && ctx.state.accuracy.place.id);
+    ok('正解率が読める', ctx.state.accuracy.place.scores.jma.rate === 100);
+
+    ctx.state.place = { id: 'なし', lat: 36.56, lon: 139.88 };
+    return ctx.loadAccuracy();
+  }).then(() => {
+    ok('idがなければ近い地点を選ぶ', ctx.state.accuracy.place.id === 'utsunomiya',
+       ctx.state.accuracy.place && ctx.state.accuracy.place.id);
+
+    ctx.state.place = { id: 'なし', lat: 33.5904, lon: 130.4017 };   // 福岡
+    return ctx.loadAccuracy();
+  }).then(() => {
+    ok('遠すぎる集計は使わない', ctx.state.accuracy.place === null);
+
+    ok('1日の期間は日付で出す',
+       /9\/2/.test(ctx.periodText('2026-09-02T00:00:00+09:00', 24)),
+       ctx.periodText('2026-09-02T00:00:00+09:00', 24));
+    ok('半日の期間は午前・午後で出す',
+       ctx.periodText('2026-09-09T00:00:00+09:00', 12) === '9/9 午前',
+       ctx.periodText('2026-09-09T00:00:00+09:00', 12));
+    ok('午後', ctx.periodText('2026-09-09T12:00:00+09:00', 12) === '9/9 午後',
+       ctx.periodText('2026-09-09T12:00:00+09:00', 12));
+
+    console.log('\n■ 集計ファイルがないとき');
+    ctx.getJSON = () => Promise.reject(new Error('HTTP 404'));
+    return ctx.loadAccuracy();
+  }).then(() => {
+    ok('なければ空のまま', ctx.state.accuracy === null);
+
+    console.log('\n■ 数値予報が落ちたとき');
   let calls = 0;
-  ctx.getJSON = (u) => { calls++; return calls === 1 ? Promise.reject(new Error('HTTP 400')) : Promise.resolve(meteo); };
+  ctx.getJSON = (u) => {
+    calls++;
+    if (u.indexOf('temperature_2m') < 0) { return Promise.resolve(meteoPops); }
+    return calls === 1 ? Promise.reject(new Error('HTTP 400')) : Promise.resolve(meteo);
+  };
   return ctx.loadModel(place).then(() => {
-    ok('モデル指定なしで取り直す', calls === 2, calls);
-    ok('取り直しても値が入る', ctx.state.future.model.length === 3);
-    console.log('\n' + pass + ' 件確認しました' + (process.exitCode ? '（失敗あり）' : ''));
+      ok('モデル指定なしで取り直す', calls === 3, calls);
+      ok('取り直しても値が入る', ctx.state.future.model.length === 3);
+      console.log('\n' + pass + ' 件確認しました' + (process.exitCode ? '（失敗あり）' : ''));
+    });
   });
 }).catch(function (e) {
   console.log('  例外: ' + e.stack);
