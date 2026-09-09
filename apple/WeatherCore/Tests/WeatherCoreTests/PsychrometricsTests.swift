@@ -39,7 +39,7 @@ final class 湿り空気の計算: XCTestCase {
     }
 
     func test_不快指数() {
-        XCTAssertEqual(Psychrometrics.discomfortIndex(30, 70), 82.7, accuracy: 0.3)
+        XCTAssertEqual(Psychrometrics.discomfortIndex(30, 70), 81.38, accuracy: 0.02)
     }
 
     func test_標高が高いほど気圧は低い() {
