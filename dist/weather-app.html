@@ -1725,6 +1725,21 @@ function daysInRange(xMin, xMax) {
   return out;
 }
 
+/* 時刻の目盛りを何時間おきにするか決める。
+   表示範囲がせまいほど細かく刻み、入りきらないときは
+   1→2→3→6→12→24時間 と順に粗くして重ならないようにします。
+   間隔がせまいときは「時」を省いて数字だけにします。
+
+     span   表示している時間の幅（時間）
+     usable グラフの目盛りに使える横幅（px） */
+function hourTicks(span, usable) {
+  var STEPS = [1, 2, 3, 6, 12, 24];
+  var i = span > 120 ? 5 : (span > 80 ? 3 : (span > 30 ? 2 : 1));
+  while (i < STEPS.length - 1 && usable / (span / STEPS[i]) < 24) { i++; }
+  var gap = usable / (span / STEPS[i]);
+  return { step: STEPS[i], unit: gap >= 34, gap: gap };
+}
+
 /* 折れ線を1枚描く */
 function lineChart(o) {
   var W = o.width || 720;
@@ -1784,9 +1799,9 @@ function lineChart(o) {
   });
 
   /* 時刻の目盛り */
-  var span = (o.xMax - o.xMin) / 3600e3;
-  var stepH = span > 100 ? 24 : (span > 72 ? 12 : (span > 40 ? 12 : (span > 20 ? 6 : 3)));
-  while ((W - PL - PR) / (span / stepH) < 42) { stepH *= 2; }
+  var tick = hourTicks((o.xMax - o.xMin) / 3600e3, W - PL - PR);
+  var stepH = tick.step;
+  var withUnit = tick.unit;
   var j0 = new Date(o.xMin + 9 * 3600e3);
   j0.setUTCMinutes(0, 0, 0);
   while (j0.getUTCHours() % stepH !== 0) { j0.setTime(j0.getTime() + 3600e3); }
@@ -1796,8 +1811,10 @@ function lineChart(o) {
     if (hh !== 0) {
       svg.appendChild(svgEl('line', { class: 'grid', x1: x(t), x2: x(t), y1: PT, y2: H - PB, opacity: '.6' }));
     }
+    /* 1日刻みのときは全部0時になるので、下の日付だけにまかせます */
+    if (stepH >= 24) { continue; }
     var lb2 = svgEl('text', { class: 'axis', x: x(t), y: H - PB + 14, 'text-anchor': 'middle' });
-    lb2.textContent = hh + '時';
+    lb2.textContent = withUnit ? hh + '時' : String(hh);
     svg.appendChild(lb2);
   }
 

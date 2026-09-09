@@ -217,5 +217,23 @@ ctx.loadForecast({ lat: 36.5551, lon: 139.8828 }).then(() => {
   const st = ctx.state.status.find(s => s.key === 'jma_forecast');
   ok('取得状況に名前が出る', st && st.name === '気象庁（府県天気予報）', st && st.name);
 
+  console.log('\n■ 時刻の目盛りの刻み');
+  /* 表示範囲は「過去24時間＋先N日」なので、1日=48h・2日=72h・3日=96h・7日=192h */
+  const tick = (span, usable) => ctx.hourTicks(span, usable);
+  ok('1日（広い画面）は3時間おき', tick(48, 1006).step === 3, tick(48, 1006).step);
+  ok('2日（広い画面）は3時間おき', tick(72, 1006).step === 3, tick(72, 1006).step);
+  ok('3日（広い画面）は6時間おき', tick(96, 1006).step === 6, tick(96, 1006).step);
+  ok('7日は1日おき', tick(192, 1006).step === 24, tick(192, 1006).step);
+  ok('1日（スマホ）は6時間おき', tick(48, 298).step === 6, tick(48, 298).step);
+  ok('2日（スマホ）は6時間おき', tick(72, 298).step === 6, tick(72, 298).step);
+  ok('3日（スマホ）は12時間おき', tick(96, 298).step === 12, tick(96, 298).step);
+  ok('刻みは1・2・3・6・12・24時間のどれか',
+     [8, 24, 48, 72, 96, 192].every(sp => [40, 100, 298, 658, 1006, 1400]
+       .every(w => [1, 2, 3, 6, 12, 24].indexOf(tick(sp, w).step) >= 0)));
+  ok('狭いほど粗くなる', tick(72, 298).step >= tick(72, 1006).step);
+  ok('間隔が広いときは「時」を付ける', tick(48, 1006).unit === true);
+  ok('間隔がせまいときは数字だけ', tick(72, 298).unit === false, tick(72, 298).gap);
+  ok('どんなに狭くても24時間より粗くしない', tick(192, 40).step === 24, tick(192, 40).step);
+
   console.log('\n' + pass + ' 件確認しました' + (process.exitCode ? '（失敗あり）' : ''));
 });
