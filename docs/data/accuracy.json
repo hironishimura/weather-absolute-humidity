@@ -1,5 +1,5 @@
 {
-  "updated_at": "2026-09-09T20:19:47.988719+09:00",
+  "updated_at": "2026-09-09T20:22:22.842470+09:00",
   "rain_mm": 1.0,
   "say_rain": 50.0,
   "places": [
@@ -8,7 +8,7 @@
       "label": "栃木県宇都宮市",
       "lat": 36.5551,
       "lon": 139.8828,
-      "station": null,
+      "station": "宇都宮",
       "periods": [],
       "scores": {}
     }
