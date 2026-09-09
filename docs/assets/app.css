@@ -120,6 +120,19 @@ button{ font:inherit; color:inherit; background:none; border:0; cursor:pointer; 
 .place__eyebrow{ font-size:.75rem; color:var(--accent); font-weight:700; letter-spacing:.1em; }
 .place__now{ font-size:clamp(1.375rem,4.5vw,1.875rem); font-weight:700; letter-spacing:.03em; line-height:1.4; }
 .place__sub{ font-size:.75rem; color:var(--text-mute); font-family:var(--mono); }
+.chips{ display:flex; flex-wrap:wrap; gap:8px; margin-top:14px; }
+.chip{
+  border:1px solid var(--line); background:var(--bg); color:var(--text-mid);
+  border-radius:999px; padding:7px 15px; font-size:.8125rem; font-weight:600;
+  white-space:nowrap; max-width:16em; overflow:hidden; text-overflow:ellipsis;
+}
+.chip:hover{ border-color:var(--accent); color:var(--accent); }
+.chip.is-on{ background:var(--navy); border-color:var(--navy); color:var(--on-navy); }
+.chip--add{ border-style:dashed; }
+
+.btn--danger{ background:transparent; color:var(--warn); border-color:var(--warn); }
+.btn--danger:hover{ background:color-mix(in srgb, var(--warn) 10%, transparent); filter:none; }
+
 .place__edit{ margin-top:12px; border-top:1px solid var(--line-soft); padding-top:12px; }
 .place__edit summary{ font-size:.8125rem; color:var(--accent); cursor:pointer; }
 .place__form{ display:flex; flex-wrap:wrap; gap:12px; margin-top:14px; }

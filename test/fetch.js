@@ -128,9 +128,41 @@ ctx.loadAmedas(place).then(function (hit) {
   ok('失敗の理由が伝わる', ctx.state.status.find(s => s.key === 'weathernews').msg.indexOf('作りが変わった') >= 0);
   ok('ウェザーニュースの予報は入らない', !ctx.state.future.weathernews);
 
-  console.log('\n■ ファイルがないとき');
-  ctx.getJSON = () => Promise.reject(new Error('HTTP 404'));
-  return ctx.loadSnapshot();
+  console.log('\n■ 取り込みファイルが複数地点のとき');
+  ctx.state.place = { lat: 36.5551, lon: 139.8828 };
+  const multi = {
+    generated_at: '2026-09-08T14:05:00+09:00',
+    places: [
+      { id: 'tokyo', label: '東京都千代田区', lat: 35.6812, lon: 139.7671,
+        sources: { yahoo: { ok: true, label: '東京都千代田区',
+          current: { time: '2026-09-08T14:00:00+09:00', temp: 30, humidity: 50 }, hourly: [] } } },
+      { id: 'utsunomiya', label: '栃木県宇都宮市', lat: 36.5551, lon: 139.8828,
+        sources: { yahoo: { ok: true, label: '栃木県宇都宮市',
+          current: { time: '2026-09-08T14:00:00+09:00', temp: 24.5, humidity: 67 }, hourly: [] } } }
+    ]
+  };
+  ctx.getJSON = () => Promise.resolve(multi);
+  ctx.state.now = {}; ctx.state.future = {}; ctx.state.weekly = {}; ctx.state.popBlocks = {};
+  return ctx.loadSnapshot().then(() => {
+    ok('近いほうの地点を選ぶ', near(ctx.state.now.yahoo.values.temp, 24.5, 0.001),
+       ctx.state.now.yahoo && ctx.state.now.yahoo.values.temp);
+    ok('どの地点の値か分かる',
+       ctx.state.status.find(s => s.key === 'snapshot').msg.indexOf('宇都宮') >= 0,
+       ctx.state.status.find(s => s.key === 'snapshot').msg);
+
+    console.log('\n■ 遠い地点しかないとき');
+    ctx.state.place = { lat: 33.5904, lon: 130.4017 };   // 福岡
+    ctx.state.now = {}; ctx.state.future = {};
+    return ctx.loadSnapshot();
+  }).then(() => {
+    ok('遠すぎる取り込みは使わない', !ctx.state.now.yahoo);
+    const st = ctx.state.status.find(s => s.key === 'yahoo');
+    ok('理由と距離を出す', st.ok === null && /km/.test(st.msg), st.msg);
+
+    console.log('\n■ ファイルがないとき');
+    ctx.getJSON = () => Promise.reject(new Error('HTTP 404'));
+    return ctx.loadSnapshot();
+  });
 }).then(function () {
   ok('未取得として扱う', ctx.state.status.find(s => s.key === 'yahoo').ok === null);
   ok('直し方が書いてある', ctx.state.status.find(s => s.key === 'snapshot').msg.indexOf('collect.py') > 0);

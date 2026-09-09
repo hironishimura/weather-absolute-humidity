@@ -745,6 +745,18 @@ def load_settings():
         return json.load(f)
 
 
+def places_of(settings):
+    """設定から地点の一覧を作る。1地点だけの古い書き方にも合わせる。"""
+    places = settings.get("places")
+    if places:
+        return places
+    return [{
+        "id": "default",
+        "label": settings.get("label", ""),
+        "sources": settings.get("sources") or {},
+    }]
+
+
 def main():
     ap = argparse.ArgumentParser(description="Yahoo!天気・ウェザーニュースから気温と湿度を取り込む")
     ap.add_argument("--dry-run", action="store_true", help="書き出さずに中身を表示する")
@@ -765,21 +777,32 @@ def main():
             local[key] = f.read()
 
     now = datetime.now(JST)
-    result = {
-        "generated_at": now.isoformat(),
-        "label": settings.get("label", ""),
-        "sources": {},
-    }
-    for name, conf in (settings.get("sources") or {}).items():
-        if name in local:
-            conf = dict(conf, enabled=True)
-        result["sources"][name] = collect_one(name, conf, html=local.get(name), now=now)
+    result = {"generated_at": now.isoformat(), "places": []}
 
-    for name, r in result["sources"].items():
-        if r.get("ok"):
-            print("%-12s 取得 %d時間ぶん（%s）" % (name, len(r.get("hourly", [])), r.get("strategy")))
-        else:
-            print("%-12s 未取得 %s" % (name, r.get("error", "")))
+    for place in places_of(settings):
+        entry = {
+            "id": place.get("id", "default"),
+            "label": place.get("label", ""),
+            "sources": {},
+        }
+        for key in ("lat", "lon"):
+            if key in place:
+                entry[key] = place[key]
+
+        print("── %s" % (entry["label"] or entry["id"]))
+        for name, conf in (place.get("sources") or {}).items():
+            if name in local:
+                conf = dict(conf, enabled=True)
+            entry["sources"][name] = collect_one(name, conf, html=local.get(name), now=now)
+
+        for name, r in entry["sources"].items():
+            if r.get("ok"):
+                print("   %-12s 取得 %s（時系列%d点・週間%d日・降水確率%d区間）" % (
+                    name, r.get("strategy"), len(r.get("hourly") or []),
+                    len(r.get("weekly") or []), len(r.get("pops") or [])))
+            else:
+                print("   %-12s 未取得 %s" % (name, r.get("error", "")))
+        result["places"].append(entry)
 
     if args.dry_run:
         print(json.dumps(result, ensure_ascii=False, indent=2))

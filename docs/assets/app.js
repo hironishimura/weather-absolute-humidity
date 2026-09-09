@@ -17,7 +17,8 @@ var OPEN_METEO = 'https://api.open-meteo.com/v1/forecast';
 var SNAPSHOT = './data/latest.json';
 
 var DEFAULT_PLACE = { lat: 36.5551, lon: 139.8828, label: '栃木県宇都宮市' };
-var STORE_KEY = 'dc-weather-place';
+var STORE_KEY = 'dc-weather-places';
+var STORE_KEY_OLD = 'dc-weather-place';
 var AUTO_RELOAD_MS = 10 * 60 * 1000;
 
 /* 提供元の表示名と色（CSS変数と合わせています） */
@@ -259,7 +260,9 @@ function windText(row) {
    状態
    --------------------------------------------------------- */
 var state = {
-  place: null,          /* {lat, lon, label, office} */
+  places: [],           /* 登録した地点の一覧 */
+  activeId: null,       /* いま見ている地点のid */
+  place: null,          /* いま見ている地点 */
   offices: null,        /* area.json の予報区一覧 {code: name} */
   station: null,        /* 最寄りのアメダス観測所 */
   now: {},              /* 提供元ごとの現在値 */
@@ -630,10 +633,49 @@ function loadModel(place) {
    scripts/weather/collect.py がサーバ側で取得して書き出した
    data/latest.json をここで読みます。ファイルがなければ「未取得」と出します。
    --------------------------------------------------------- */
+/* 取り込みファイルの中から、いま見ている地点に一番近いものを選ぶ */
+function pickSnapshotPlace(snap, place) {
+  var list = snap && snap.places;
+  if (!list || !list.length) {
+    /* 1地点だけだった古い形 */
+    return (snap && snap.sources) ? { label: snap.label || '', sources: snap.sources, km: 0 } : null;
+  }
+  var best = null, nearest = null;
+  list.forEach(function (p) {
+    if (!isNum(p.lat) || !isNum(p.lon)) { return; }
+    var km = distanceKm(place.lat, place.lon, p.lat, p.lon);
+    if (!nearest || km < nearest.km) { nearest = { km: km, place: p }; }
+  });
+  if (!nearest) {
+    best = list[0];
+    best.km = null;
+    return best;
+  }
+  if (nearest.km > 40) {
+    return { tooFar: true, km: nearest.km, label: nearest.place.label || nearest.place.id };
+  }
+  var out = nearest.place;
+  out.km = nearest.km;
+  return out;
+}
+
 function loadSnapshot() {
   return getJSON(SNAPSHOT, { timeout: 6000 })
     .then(function (snap) {
-      var src = (snap && snap.sources) || {};
+      var hit = pickSnapshotPlace(snap, state.place);
+      if (!hit || hit.tooFar) {
+        var why = hit
+          ? 'この地点の取り込みがありません（一番近い取り込みは' + hit.label +
+            'で約' + hit.km.toFixed(0) + 'km離れています）'
+          : '取り込みファイルに地点が入っていません';
+        setStatus('yahoo', null, why);
+        setStatus('weathernews', null, why);
+        setStatus('snapshot', null,
+          'この地点を取り込むには scripts/settings.json の places に足してください');
+        return;
+      }
+      var near = isNum(hit.km) && hit.km > 0.5 ? '（約' + hit.km.toFixed(0) + 'km離れた取り込み地点）' : '';
+      var src = hit.sources || {};
       var got = [];
       ['yahoo', 'weathernews'].forEach(function (key) {
         var s = src[key];
@@ -691,6 +733,7 @@ function loadSnapshot() {
         });
         if (pr.length) { state.popBlocks[key] = pr; }
         got.push(SOURCES[key].name);
+        state.now[key] && (state.now[key].fromLabel = hit.label || '');
         var kinds = [];
         if (rows.some(function (r) { return isNum(r.temp); })) { kinds.push('気温'); }
         if (rows.some(function (r) { return isNum(r.vh); })) { kinds.push('湿度'); }
@@ -700,7 +743,7 @@ function loadSnapshot() {
           (snap.generated_at ? '（取得 ' + fmtDateTime(new Date(snap.generated_at)) + '）' : ''));
       });
       setStatus('snapshot', got.length > 0, got.length
-        ? got.join('・') + ' を読み込みました'
+        ? (hit.label ? hit.label + ' の' : '') + got.join('・') + ' を読み込みました' + near
         : 'data/latest.json はありますが中身が空です');
     })
     .catch(function () {
@@ -727,11 +770,8 @@ function primaryNow() {
 
 function renderPlace() {
   var p = state.place;
-  var label = p.label;
-  if (!label) {
-    label = state.station ? state.station.name + ' 付近' : '現在地';
-  }
-  $('place-name').textContent = label;
+  if (!p) { return; }
+  $('place-name').textContent = p.name || (state.station ? state.station.name + ' 付近' : '地点');
   var sub = p.lat.toFixed(4) + '° N, ' + p.lon.toFixed(4) + '° E';
   if (state.now.jma && state.now.jma.time) {
     sub += '　・　' + fmtDateTime(state.now.jma.time) + ' 取得';
@@ -742,8 +782,6 @@ function renderPlace() {
     ? '気象庁の観測地点：' + state.station.name + '（指定地点から約 ' + state.station.km.toFixed(1) +
       ' km・標高 ' + state.station.alt + ' m）。気温・湿度がそろった最寄りの観測所を使っています。'
     : '';
-  $('in-lat').value = p.lat.toFixed(4);
-  $('in-lon').value = p.lon.toFixed(4);
 }
 
 function renderNow() {
@@ -1356,20 +1394,99 @@ function renderAll() {
 }
 
 /* ---------------------------------------------------------
-   地点の保存と読み込み
+   地点の保存と読み込み（複数登録できます）
    --------------------------------------------------------- */
-function savePlace(p) {
-  try { localStorage.setItem(STORE_KEY, JSON.stringify(p)); } catch (e) { /* 使えなくても動きます */ }
+function newId() {
+  return 'p' + Date.now().toString(36) + Math.floor(Math.random() * 1296).toString(36);
 }
-function loadPlace() {
+
+function savePlaces() {
+  try {
+    localStorage.setItem(STORE_KEY, JSON.stringify({ activeId: state.activeId, list: state.places }));
+  } catch (e) { /* 使えなくても動きます */ }
+}
+
+function loadPlaces() {
   try {
     var raw = localStorage.getItem(STORE_KEY);
     if (raw) {
-      var p = JSON.parse(raw);
-      if (isNum(p.lat) && isNum(p.lon)) { return p; }
+      var v = JSON.parse(raw);
+      if (v && v.list && v.list.length) { return v; }
+    }
+    /* ひとつだけ保存していた古い形からの引き継ぎ */
+    var one = localStorage.getItem(STORE_KEY_OLD);
+    if (one) {
+      var o = JSON.parse(one);
+      if (isNum(o.lat) && isNum(o.lon)) {
+        var id = newId();
+        return { activeId: id, list: [{ id: id, name: o.label || '登録した地点',
+                                        lat: o.lat, lon: o.lon, office: o.office || null }] };
+      }
     }
   } catch (e) { /* 壊れていたら既定値 */ }
   return null;
+}
+
+function defaultPlaces() {
+  var id = newId();
+  return { activeId: id, list: [{ id: id, name: DEFAULT_PLACE.label,
+                                  lat: DEFAULT_PLACE.lat, lon: DEFAULT_PLACE.lon, office: null }] };
+}
+
+function activePlace() {
+  for (var i = 0; i < state.places.length; i++) {
+    if (state.places[i].id === state.activeId) { return state.places[i]; }
+  }
+  return state.places[0] || null;
+}
+
+function renderChips() {
+  var box = $('place-chips');
+  box.innerHTML = '';
+  state.places.forEach(function (p) {
+    var b = el('button', 'chip' + (p.id === state.activeId ? ' is-on' : ''), p.name || '地点');
+    b.type = 'button';
+    b.addEventListener('click', function () {
+      if (p.id === state.activeId) { return; }
+      state.activeId = p.id;
+      useActive();
+    });
+    box.appendChild(b);
+  });
+  var add = el('button', 'chip chip--add', '＋ 地点を追加');
+  add.type = 'button';
+  add.addEventListener('click', function () {
+    $('place-edit').open = true;
+    $('in-name').focus();
+  });
+  box.appendChild(add);
+}
+
+function fillForm() {
+  var p = activePlace();
+  if (!p) { return; }
+  $('in-name').value = p.name || '';
+  $('in-lat').value = isNum(p.lat) ? p.lat.toFixed(4) : '';
+  $('in-lon').value = isNum(p.lon) ? p.lon.toFixed(4) : '';
+  $('in-office').value = p.office || '';
+}
+
+/* 入力欄から地点を読む。おかしければ null。 */
+function readForm() {
+  var lat = parseFloat($('in-lat').value);
+  var lon = parseFloat($('in-lon').value);
+  if (!isNum(lat) || !isNum(lon) || lat < 20 || lat > 46 || lon < 122 || lon > 154) {
+    setStatus('app', false, '緯度・経度は日本の範囲（緯度20〜46、経度122〜154）で入れてください');
+    renderStatus();
+    return null;
+  }
+  var name = ($('in-name').value || '').trim();
+  return {
+    name: name || (lat.toFixed(2) + ', ' + lon.toFixed(2)),
+    lat: Math.round(lat * 10000) / 10000,
+    lon: Math.round(lon * 10000) / 10000,
+    office: $('in-office').value || null
+  };
 }
 
 function fillOfficeSelect() {
@@ -1437,64 +1554,103 @@ function refresh() {
     });
 }
 
-function applyPlace(p) {
-  state.place = p;
-  savePlace(p);
+/* いま見ている地点に切り替えて読み直す */
+function useActive() {
+  state.place = activePlace();
+  savePlaces();
+  renderChips();
+  fillForm();
   renderPlace();
   refresh();
 }
 
-function locate() {
+function askLocation(onOk) {
   if (!navigator.geolocation) {
     setStatus('app', false, 'この端末では現在地を取得できません');
     renderStatus();
     return;
   }
-  $('btn-locate').disabled = true;
   navigator.geolocation.getCurrentPosition(
     function (pos) {
-      $('btn-locate').disabled = false;
-      applyPlace({
-        lat: Math.round(pos.coords.latitude * 10000) / 10000,
-        lon: Math.round(pos.coords.longitude * 10000) / 10000,
-        label: null,
-        office: null
-      });
+      onOk(Math.round(pos.coords.latitude * 10000) / 10000,
+           Math.round(pos.coords.longitude * 10000) / 10000);
     },
     function (err) {
-      $('btn-locate').disabled = false;
-      setStatus('app', false, '現在地を取得できませんでした（' + (err && err.message ? err.message : '許可されていません') + '）');
+      setStatus('app', false, '現在地を取得できませんでした（' +
+        (err && err.message ? err.message : '許可されていません') + '）');
       renderStatus();
     },
     { enableHighAccuracy: false, timeout: 10000, maximumAge: 5 * 60 * 1000 }
   );
 }
 
+/* ヘッダーの「現在地」。現在地の地点はひとつだけ持ち、位置を入れ替えます */
+function locate() {
+  $('btn-locate').disabled = true;
+  askLocation(function (lat, lon) {
+    $('btn-locate').disabled = false;
+    var here = null;
+    state.places.forEach(function (p) { if (p.here) { here = p; } });
+    if (here) {
+      here.lat = lat; here.lon = lon; here.office = null;
+    } else {
+      here = { id: newId(), name: '現在地', lat: lat, lon: lon, office: null, here: true };
+      state.places.unshift(here);
+    }
+    state.activeId = here.id;
+    useActive();
+  });
+  setTimeout(function () { $('btn-locate').disabled = false; }, 11000);
+}
+
 /* ---------------------------------------------------------
    起動
    --------------------------------------------------------- */
 function init() {
-  state.place = loadPlace() || {
-    lat: DEFAULT_PLACE.lat, lon: DEFAULT_PLACE.lon, label: DEFAULT_PLACE.label, office: null
-  };
+  var saved = loadPlaces() || defaultPlaces();
+  state.places = saved.list;
+  state.activeId = saved.activeId || (saved.list[0] && saved.list[0].id);
+  state.place = activePlace();
 
   $('btn-reload').addEventListener('click', function () { refresh(); });
   $('btn-locate').addEventListener('click', locate);
 
-  $('btn-apply').addEventListener('click', function () {
-    var lat = parseFloat($('in-lat').value);
-    var lon = parseFloat($('in-lon').value);
-    if (!isNum(lat) || !isNum(lon) || lat < 20 || lat > 46 || lon < 122 || lon > 154) {
-      setStatus('app', false, '緯度・経度は日本の範囲（緯度20〜46、経度122〜154）で入れてください');
+  $('btn-save').addEventListener('click', function () {
+    var v = readForm();
+    var p = activePlace();
+    if (!v || !p) { return; }
+    p.name = v.name; p.lat = v.lat; p.lon = v.lon; p.office = v.office;
+    delete p.here;
+    useActive();
+  });
+
+  $('btn-add').addEventListener('click', function () {
+    var v = readForm();
+    if (!v) { return; }
+    var p = { id: newId(), name: v.name, lat: v.lat, lon: v.lon, office: v.office };
+    state.places.push(p);
+    state.activeId = p.id;
+    useActive();
+  });
+
+  $('btn-here').addEventListener('click', function () {
+    askLocation(function (lat, lon) {
+      $('in-lat').value = lat.toFixed(4);
+      $('in-lon').value = lon.toFixed(4);
+      $('in-office').value = '';
+    });
+  });
+
+  $('btn-delete').addEventListener('click', function () {
+    if (state.places.length <= 1) {
+      setStatus('app', false, '地点がひとつだけのときは削除できません');
       renderStatus();
       return;
     }
-    applyPlace({ lat: lat, lon: lon, label: null, office: $('in-office').value || null });
-  });
-
-  $('btn-default').addEventListener('click', function () {
-    $('in-office').value = '';
-    applyPlace({ lat: DEFAULT_PLACE.lat, lon: DEFAULT_PLACE.lon, label: DEFAULT_PLACE.label, office: null });
+    var id = state.activeId;
+    state.places = state.places.filter(function (p) { return p.id !== id; });
+    state.activeId = state.places[0].id;
+    useActive();
   });
 
   $('in-surface').addEventListener('input', function () {
@@ -1512,15 +1668,10 @@ function init() {
     });
   });
 
+  renderChips();
+  fillForm();
   renderPlace();
   refresh();
-
-  /* すでに許可されていれば現在地に合わせます（初回は「現在地」ボタンから） */
-  if (navigator.permissions && navigator.permissions.query) {
-    navigator.permissions.query({ name: 'geolocation' }).then(function (st) {
-      if (st.state === 'granted') { locate(); }
-    }).catch(function () { /* 対応していない端末では何もしません */ });
-  }
 
   /* 画面幅が変わったらグラフを描き直します */
   var resizeTimer = null;
