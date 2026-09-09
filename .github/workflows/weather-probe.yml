@@ -1,36 +1,16 @@
 name: ページの作りを調べる
 
-# Yahoo!天気・ウェザーニュースのページが実際どうなっているかを見るための道具。
-# 手元から外に出られない環境でも、ここから動かせばログで中身を確認できる。
-# 読み取りが壊れたときの原因調べにも使う。
-
 on:
+  push:
+    branches: [probe]
   workflow_dispatch:
-    inputs:
-      url:
-        description: '調べるURL（空なら settings.json のURL）'
-        type: string
-        default: ''
-      links:
-        description: 'リンクを探すページのURL'
-        type: string
-        default: ''
-      keyword:
-        description: 'リンク探しの手がかり'
-        type: string
-        default: '宇都宮'
 
 jobs:
   probe:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: 調べる
-        run: |
-          if [ -n "${{ inputs.links }}" ]; then
-            python3 scripts/probe.py --links "${{ inputs.links }}" --keyword "${{ inputs.keyword }}"
-          elif [ -n "${{ inputs.url }}" ]; then
-            python3 scripts/probe.py --url "${{ inputs.url }}"
-          else
-            python3 scripts/probe.py
-          fi
+      - name: 読み取りの確認
+        run: python3 scripts/test_collect.py
+      - name: 実際に取り込んでみる
+        run: python3 scripts/collect.py --dry-run

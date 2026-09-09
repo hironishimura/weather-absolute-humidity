@@ -45,6 +45,25 @@ COL_HTML = """
 </body></html>
 """
 
+# ウェザーニュースの実況欄に近い形
+OBS_HTML = """
+<html><body>
+<ul class="list">
+  <li class="obs_block"><p class="title">気温</p><div class="obs_content">
+    <div class="inner"><p class="value">26.7</p></div><p class="unit">\u2103</p></div></li>
+  <li class="obs_block"><p class="title">湿度</p><div class="obs_content">
+    <div class="inner"><p class="value">94</p></div><p class="unit">%</p></div></li>
+  <li class="obs_block"><p class="title">気圧</p><div class="obs_content">
+    <div class="inner"><p class="value">988</p></div><p class="unit">hPa</p></div></li>
+  <li class="obs_block"><p class="title">風</p><div class="obs_content">
+    <div class="inner"><p class="value">1.6</p></div><p class="unit">m/s</p></div></li>
+</ul>
+</body></html>
+"""
+
+# Yahoo!天気のように、同じ形の表が「今日」「明日」と2つ並ぶ形
+TWO_TABLE_HTML = ROW_HTML + """\n<table class="yjw_table">\n  <tr><td>時刻</td><td>15時</td><td>18時</td></tr>\n  <tr><td>気温（℃）</td><td>18.0</td><td>17.0</td></tr>\n  <tr><td>湿度（％）</td><td>90</td><td>92</td></tr>\n</table>\n"""
+
 JSON_HTML = """
 <html><body>
 <script type="application/json">
@@ -86,6 +105,55 @@ class 表の読み取り(unittest.TestCase):
         html = ROW_HTML.replace("<table", "<script>var x='湿度';</script><table")
         got = collect.series_from_html(html)
         self.assertEqual(got[2], ["64", "68", "72"])
+
+
+class 実況の読み取り(unittest.TestCase):
+
+    def test_見出しと値の組から読む(self):
+        got = collect.current_from_blocks(OBS_HTML)
+        self.assertEqual(got["temp"], 26.7)
+        self.assertEqual(got["humidity"], 94.0)
+        self.assertEqual(got["pressure"], 988.0)
+
+    def test_風は拾わない(self):
+        self.assertNotIn("wind", collect.current_from_blocks(OBS_HTML))
+
+    def test_湿度がなければNone(self):
+        html = OBS_HTML.replace("湿度", "降水量")
+        self.assertIsNone(collect.current_from_blocks(html))
+
+    def test_実況として扱う(self):
+        r = collect.collect_one("wni", {"enabled": True, "url": "http://example.test/"},
+                                html=OBS_HTML, now=NOW)
+        self.assertTrue(r["ok"])
+        self.assertFalse(r["current_is_forecast"])
+        self.assertEqual(r["current"]["temp"], 26.7)
+        self.assertEqual(r["current"]["pressure"], 988.0)
+        self.assertIn("実況", r["strategy"])
+
+
+class 表が2つ並ぶ形(unittest.TestCase):
+
+    def test_両方読んでつなげる(self):
+        r = collect.collect_one("yahoo", {"enabled": True, "url": "http://example.test/"},
+                                html=TWO_TABLE_HTML, now=NOW)
+        self.assertTrue(r["ok"])
+        self.assertEqual(len(r["hourly"]), 5)
+        self.assertIn("table×2", r["strategy"])
+
+    def test_2つめは翌日になる(self):
+        r = collect.collect_one("yahoo", {"enabled": True, "url": "http://example.test/"},
+                                html=TWO_TABLE_HTML, now=NOW)
+        times = [x["time"] for x in r["hourly"]]
+        self.assertEqual(times[0], "2026-09-08T15:00:00+09:00")
+        self.assertEqual(times[2], "2026-09-08T17:00:00+09:00")
+        self.assertEqual(times[3], "2026-09-09T15:00:00+09:00")
+        self.assertEqual(times[4], "2026-09-09T18:00:00+09:00")
+
+    def test_読める表を全部返す(self):
+        got = collect.series_all_from_html(TWO_TABLE_HTML)
+        self.assertEqual(len(got), 2)
+        self.assertEqual(got[1][1], ["18.0", "17.0"])
 
 
 class 埋め込みJSONの読み取り(unittest.TestCase):
@@ -158,7 +226,7 @@ class 提供元ごとの処理(unittest.TestCase):
         r = collect.collect_one("yahoo", {"enabled": True, "url": "http://example.test/",
                                           "label": "宇都宮"}, html=ROW_HTML, now=NOW)
         self.assertTrue(r["ok"])
-        self.assertEqual(r["strategy"], "table")
+        self.assertEqual(r["strategy"], "table×1")
         self.assertEqual(len(r["hourly"]), 3)
         self.assertEqual(r["label"], "宇都宮")
         self.assertTrue(r["current_is_forecast"])

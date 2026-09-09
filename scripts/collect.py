@@ -205,11 +205,85 @@ def series_from_cols(table):
 
 def series_from_html(html):
     """表から（時刻・気温・湿度）を取り出す。読めなければ None。"""
+    got = series_all_from_html(html)
+    return got[0] if got else None
+
+
+def series_all_from_html(html):
+    """読める表を全部返す。
+
+    Yahoo!天気は「今日」と「明日」で同じ形の表が2つ並ぶので、
+    どちらも読んでつなげられるようにしておく。
+    """
+    out = []
     for table in read_tables(html):
         for reader in (series_from_rows, series_from_cols):
             got = reader(table)
             if got:
-                return got
+                out.append(got)
+                break
+    return out
+
+
+# =========================================================
+# 実況の読み取り
+# ---------------------------------------------------------
+# ウェザーニュースは1時間ごとの湿度を画面側で組み立てているため
+# HTMLからは読めないが、実況（いまの気温・湿度・気圧）は
+# 「見出しと値」の組で素直に書かれている。そこを読む。
+# =========================================================
+OBS_BLOCK_RE = re.compile(r'<li[^>]*class="[^"]*obs_block[^"]*"[^>]*>(.*?)</li>', re.S | re.I)
+OBS_TITLE_RE = re.compile(r'class="title"[^>]*>\s*([^<]{1,12})', re.S)
+OBS_VALUE_RE = re.compile(r'class="value"[^>]*>\s*(-?\d+(?:\.\d+)?)', re.S)
+
+OBS_FIELDS = (
+    ("湿度", "humidity", 0, 100),
+    ("気温", "temp", -60, 60),
+    ("気圧", "pressure", 800, 1100),
+)
+
+
+def current_from_blocks(html):
+    """「見出し＋値」が組になっている実況欄から読む。"""
+    found = {}
+    for m in OBS_BLOCK_RE.finditer(html):
+        block = m.group(1)
+        t = OBS_TITLE_RE.search(block)
+        v = OBS_VALUE_RE.search(block)
+        if not t or not v:
+            continue
+        title = t.group(1).strip()
+        for label, key, lo, hi in OBS_FIELDS:
+            if label in title and key not in found:
+                val = float(v.group(1))
+                if lo <= val <= hi:
+                    found[key] = val
+    if "temp" in found and "humidity" in found:
+        return found
+    return None
+
+
+def current_from_labels(html):
+    """見出しの近くに値と単位が並んでいる作りから読む（控え）。"""
+    found = {}
+    for label, key, unit, lo, hi in (
+        ("湿度", "humidity", "%", 0, 100),
+        ("気温", "temp", "℃", -60, 60),
+    ):
+        for m in re.finditer(label, html):
+            seg = html[m.end():m.end() + 400]
+            v = re.search(r">\s*(-?\d+(?:\.\d+)?)\s*<", seg)
+            if not v:
+                continue
+            after = seg[v.end():v.end() + 150]
+            if unit not in after:
+                continue
+            val = float(v.group(1))
+            if lo <= val <= hi:
+                found[key] = val
+                break
+    if "temp" in found and "humidity" in found:
+        return found
     return None
 
 
@@ -263,12 +337,23 @@ def series_from_json(html):
 # =========================================================
 # 時刻の組み立て
 # =========================================================
-def build_hourly(times, temps, hums, now=None):
-    """読み取った文字列を {time, temp, humidity} の並びにする。"""
+def build_hourly(times, temps, hums, now=None, start=None):
+    """読み取った文字列を {time, temp, humidity} の並びにする。
+
+    start に前の表の最後の時刻を渡すと、その続きとして日付を進める。
+    （Yahoo!天気は「今日」「明日」で表が分かれていて、どちらも 0時 から始まる）
+    """
     now = now or datetime.now(JST)
     out = []
     day = now.replace(minute=0, second=0, microsecond=0)
     prev_hour = None
+    if start:
+        try:
+            prev = datetime.fromisoformat(start)
+            day = prev.replace(minute=0, second=0, microsecond=0)
+            prev_hour = prev.hour
+        except ValueError:
+            pass
 
     n = min(len(temps), len(hums))
     for i in range(n):
@@ -353,27 +438,52 @@ def collect_one(name, conf, html=None, now=None):
         except (urllib.error.URLError, urllib.error.HTTPError, OSError) as e:
             return {"ok": False, "url": url, "error": "取得できませんでした（%s）" % e}
 
-    strategy, got = "table", series_from_html(html)
-    if not got:
-        strategy, got = "json", series_from_json(html)
-    if not got:
+    ways = []
+
+    # 1時間（3時間）ごとの並び
+    tables = series_all_from_html(html)
+    hourly = []
+    if tables:
+        ways.append("table×%d" % len(tables))
+        for got in tables:
+            hourly += build_hourly(got[0], got[1], got[2], now=now,
+                                   start=hourly[-1]["time"] if hourly else None)
+    else:
+        got = series_from_json(html)
+        if got:
+            ways.append("json")
+            hourly = build_hourly(got[0], got[1], got[2], now=now)
+
+    # いまの観測値
+    obs = current_from_blocks(html) or current_from_labels(html)
+    if obs:
+        ways.append("実況")
+
+    if not hourly and not obs:
         return {
             "ok": False,
             "url": url,
             "error": "ページから気温と湿度を読み取れませんでした（作りが変わった可能性があります）",
         }
 
-    hourly = build_hourly(got[0], got[1], got[2], now=now)
-    if not hourly:
-        return {"ok": False, "url": url, "error": "読み取れましたが、使える値がありませんでした"}
-
     out = {
         "ok": True,
         "url": url,
         "label": conf.get("label", ""),
-        "strategy": strategy,
+        "strategy": "＋".join(ways),
         "hourly": hourly,
     }
+    if obs:
+        out["current"] = {
+            "time": now.replace(second=0, microsecond=0).isoformat(),
+            "temp": obs["temp"],
+            "humidity": obs["humidity"],
+        }
+        if "pressure" in obs:
+            out["current"]["pressure"] = obs["pressure"]
+        out["current_is_forecast"] = False
+        return out
+
     cur = nearest_now(hourly, now=now)
     if cur:
         out["current"] = dict(cur)
