@@ -69,6 +69,30 @@ ok('宇都宮〜東京の距離 ≒ 100km', near(ctx.distanceKm(36.5551, 139.882
 ok('風向16方位', ctx.windText({ wind: [3.2, 0], windDirection: [1, 0] }) === '北 3.2 m/s', ctx.windText({wind:[3.2,0],windDirection:[1,0]}));
 ok('静穏', ctx.windText({ wind: [0, 0], windDirection: [0, 0] }) === '静穏 0.0 m/s', ctx.windText({wind:[0,0],windDirection:[0,0]}));
 
+console.log('\n■ 見出しの平均');
+ctx.state.now = {
+  jma:   { values: { temp: 26.0, rh: 68, vh: 16.6, mr: 14.5, dp: 19.6, di: 75.1, pressure: 1002.4 } },
+  model: { values: { temp: 24.6, rh: 66, vh: 14.9, mr: 12.9, dp: 17.9, di: 72.3, pressure: 1001.5 } },
+  yahoo: { values: { temp: 21.0, rh: 92, vh: 16.9, mr: 14.9, dp: 19.6, di: 68.8 } },
+  weathernews: { values: { temp: 20.1, rh: 97, vh: 16.9, mr: 14.9, dp: 19.6, di: 67.6 } }
+};
+let a = ctx.averageNow();
+ok('4件を使う', a.used.length === 4, a.used.join(','));
+ok('気温の平均', near(a.values.temp, (26.0+24.6+21.0+20.1)/4, 0.001), a.values.temp.toFixed(3));
+ok('相対湿度の平均', near(a.values.rh, (68+66+92+97)/4, 0.001), a.values.rh.toFixed(3));
+ok('絶対湿度の平均', near(a.values.vh, (16.6+14.9+16.9+16.9)/4, 0.001), a.values.vh.toFixed(3));
+ok('気圧は持っている2件だけで平均', near(a.values.pressure, (1002.4+1001.5)/2, 0.001), a.values.pressure.toFixed(3));
+
+ctx.state.now = { jma: { values: { temp: 26.0, rh: 68, vh: 16.6 } } };
+a = ctx.averageNow();
+ok('1件だけならその値', near(a.values.temp, 26.0, 0.001) && a.used.length === 1);
+
+ctx.state.now = { yahoo: { values: null }, weathernews: {} };
+ok('値がなければ null', ctx.averageNow() === null);
+
+ctx.state.now = {};
+ok('提供元がゼロなら null', ctx.averageNow() === null);
+
 console.log('\n■ 予報区の自動判定');
 ctx.state.offices = { '090000': '栃木県', '130000': '東京都', '016000': '石狩・空知・後志地方' };
 ok('宇都宮 → 栃木県', ctx.resolveOffice({ lat: 36.5551, lon: 139.8828 }) === '090000');
