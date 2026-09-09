@@ -89,9 +89,29 @@ def render(sync_playwright, url, conf):
                 page.wait_for_timeout(1200)
                 page.mouse.wheel(0, -6000)
             page.wait_for_timeout(wait_ms)
-            return page.content()
+            try:
+                text = page.inner_text("body")
+            except Exception:                       # noqa: BLE001
+                text = ""
+            return {"html": page.content(), "text": text}
         finally:
             browser.close()
+
+
+def dump_text(text, keywords):
+    """描画後に画面へ出ている文字を、手がかりの前後だけ見る。"""
+    if not text:
+        print("  （表示テキストを取れませんでした）")
+        return
+    flat = text.replace("\n", " / ")
+    print("  表示テキスト: %d 文字" % len(text))
+    import re as _re
+    for kw in keywords:
+        hits = list(_re.finditer(_re.escape(kw), flat))
+        print("  ── 「%s」 %d 箇所" % (kw, len(hits)))
+        for m in hits[:2]:
+            s0 = max(0, m.start() - 150)
+            print("     …%s…" % flat[s0:m.start() + 700])
 
 
 def dump(html, name):
@@ -154,12 +174,14 @@ def main():
     for name, conf, b in targets:
         print("%-12s 開いています… %s" % (name, conf["url"]))
         try:
-            html = render(sync_playwright, conf["url"], b)
+            rendered = render(sync_playwright, conf["url"], b)
         except Exception as e:                      # noqa: BLE001  何が起きても続ける
             print("%-12s 開けませんでした（%s: %s）" % (name, type(e).__name__, e))
             continue
+        html = rendered["html"]
         if args.dump:
             dump(html, name)
+            dump_text(rendered.get("text"), ["1時間ごと", "湿度", "時間ごとの", "気温"])
             continue
         r = collect.collect_one(name, dict(conf, enabled=True), html=html)
         if r.get("ok"):
