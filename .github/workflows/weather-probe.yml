@@ -5,32 +5,12 @@ on:
     branches: [probe]
   workflow_dispatch:
 
-env:
-  WN: https://weathernews.jp/onebox/tenki/tochigi/09201/
-  YH: https://weather.yahoo.co.jp/weather/jp/9/4110/9201.html
-
 jobs:
   probe:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
-      - name: Yahoo 読める表を全部
-        continue-on-error: true
-        run: python3 scripts/probe.py --tables "$YH"
-
-      - name: WN データAPI（mrf）
-        continue-on-error: true
-        run: python3 scripts/probe.py --raw "https://site.weathernews.jp/lba/wxdata/api_data_ss1/mrf?lat=36.54833&lon=139.86833"
-
-      - name: WN api_data_ss1 の呼び方
-        continue-on-error: true
-        run: python3 scripts/probe.py --around "$WN" --pattern "api_data_ss1"
-
-      - name: WN 実況ブロック
-        continue-on-error: true
-        run: python3 scripts/probe.py --around "$WN" --pattern "obs_block"
-
-      - name: WN 1時間毎予報のあたり
-        continue-on-error: true
-        run: python3 scripts/probe.py --around "$WN" --pattern "hourly"
+      - name: 読み取りの確認
+        run: python3 scripts/test_collect.py
+      - name: 実際に取り込んでみる
+        run: python3 scripts/collect.py --dry-run
