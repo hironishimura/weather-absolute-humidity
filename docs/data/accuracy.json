@@ -1,5 +1,5 @@
 {
-  "updated_at": "2026-09-09T22:40:13.513899+09:00",
+  "updated_at": "2026-09-10T03:30:10.302537+09:00",
   "rain_mm": 1.0,
   "say_rain": 50.0,
   "places": [
@@ -9,11 +9,33 @@
       "lat": 36.5551,
       "lon": 139.8828,
       "station": "宇都宮",
-      "periods": [],
-      "scores": {}
+      "periods": [
+        {
+          "start": "2026-09-09T12:00:00+09:00",
+          "hours": 12,
+          "mm": 9.0,
+          "rain": true,
+          "pops": {
+            "model": 94.0
+          }
+        }
+      ],
+      "scores": {
+        "model": {
+          "n": 1,
+          "hit": 1,
+          "rate": 100.0,
+          "brier": 0.004
+        }
+      }
     }
   ],
   "actuals": {
-    "utsunomiya": {}
+    "utsunomiya": {
+      "2026-09-09T12:00:00+09:00|12": {
+        "mm": 9.0,
+        "rain": true
+      }
+    }
   }
 }
