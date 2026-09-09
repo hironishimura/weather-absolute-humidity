@@ -99,8 +99,8 @@ public final class WeatherStore {
                       "\(hit.station.name)アメダス（約\(Format.km(hit.station.km))）／"
                       + "\(Format.dateTime(hit.observedAt)) 現在"
                       + (hit.hasHumidity ? "" : "　※この地点は湿度を観測していません"))
-            past = (try? await amedas.past24h(stationCode: hit.station.code,
-                                              observedAt: hit.observedAt)) ?? []
+            past = (try? await amedas.recentPast(stationCode: hit.station.code,
+                                                 observedAt: hit.observedAt)) ?? []
         } catch {
             setStatus("jma", SourceKey.jma.name, .failed,
                       "取得できませんでした（\(error.localizedDescription)）")
@@ -231,6 +231,7 @@ public final class WeatherStore {
                     if !blocks.isEmpty { rows = Aggregate.popSteps(blocks) }
                 }
             }
+            // 雨量は「予報が出ていない＝0」ではないので、値のある点だけを線にします
             let points = rows
                 .filter { $0.time >= from && $0.time <= to }
                 .compactMap { row -> ChartPoint? in
@@ -248,7 +249,7 @@ public final class WeatherStore {
 // MARK: - グラフに渡す形
 
 public enum ChartField: String, CaseIterable, Sendable, Identifiable {
-    case temp, rh, vh, pop
+    case temp, rh, vh, pop, precip
 
     public var id: String { rawValue }
 
@@ -258,6 +259,7 @@ public enum ChartField: String, CaseIterable, Sendable, Identifiable {
         case .rh: return "相対湿度"
         case .vh: return "絶対湿度"
         case .pop: return "降水確率"
+        case .precip: return "雨量"
         }
     }
     public var unit: String {
@@ -266,10 +268,20 @@ public enum ChartField: String, CaseIterable, Sendable, Identifiable {
         case .rh: return "%"
         case .vh: return "g/m³"
         case .pop: return "%"
+        case .precip: return "mm/h"
         }
     }
-    public var digits: Int { self == .temp || self == .vh ? 1 : 0 }
+    public var digits: Int {
+        switch self {
+        case .temp, .vh, .precip: return 1
+        case .rh, .pop: return 0
+        }
+    }
     public var fixedRange: ClosedRange<Double>? { self == .pop ? 0...100 : nil }
+    /// 雨量は棒で出します（線だとゼロが続く区間が読みにくいため）
+    public var drawsBars: Bool { self == .precip }
+    /// 0を下回らない項目
+    public var startsAtZero: Bool { self == .pop || self == .precip }
 
     func value(_ row: HourlyRow) -> Double? {
         switch self {
@@ -277,6 +289,7 @@ public enum ChartField: String, CaseIterable, Sendable, Identifiable {
         case .rh: return row.rh
         case .vh: return row.vh
         case .pop: return row.pop
+        case .precip: return row.precip
         }
     }
 }

@@ -98,15 +98,17 @@ public struct AmedasClient: Sendable {
         return d
     }
 
-    /// 過去24時間の10分値。3時間ごとのファイルを8個つなぎます。
-    public func past24h(stationCode: String, observedAt: Date) async throws -> [HourlyRow] {
+    /// 直近の10分値。3時間ごとのファイルを新しいほうから blocks 個つなぎます。
+    /// グラフに出すのは直近1時間ぶんなので、既定では2個で足ります。
+    public func recentPast(stationCode: String, observedAt: Date,
+                           blocks: Int = 2) async throws -> [HourlyRow] {
         let p = JST.parts(observedAt)
         let blockHour = ((p.hour ?? 0) / 3) * 3
         let base = JST.date(p.year ?? 2000, p.month ?? 1, p.day ?? 1, blockHour)
 
         var rows: [HourlyRow] = []
         await withTaskGroup(of: [HourlyRow].self) { group in
-            for i in stride(from: 7, through: 0, by: -1) {
+            for i in stride(from: Swift.max(blocks - 1, 0), through: 0, by: -1) {
                 let block = base.addingTimeInterval(TimeInterval(-i * 3 * 3600))
                 group.addTask {
                     (try? await self.block(stationCode: stationCode, at: block)) ?? []
@@ -133,7 +135,8 @@ public struct AmedasClient: Sendable {
             let h = J.amedas(row, "humidity")
             guard t != nil, h != nil else { continue }   // 欠測は捨てます
             let pr = J.amedas(row, "pressure")
-            if let made = HourlyRow.make(time: time, temp: t, rh: h, pressure: pr) {
+            if let made = HourlyRow.make(time: time, temp: t, rh: h, pressure: pr,
+                                         precip: J.amedas(row, "precipitation1h")) {
                 out.append(made)
             }
         }

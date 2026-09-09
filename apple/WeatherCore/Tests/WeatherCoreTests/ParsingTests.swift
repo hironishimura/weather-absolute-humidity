@@ -3,7 +3,7 @@ import XCTest
 
 /// ネットには出ず、作ったデータで読み取りを確かめます。
 ///
-/// 過去24時間は8つのファイルを同時に取りに行くので、
+/// 直近の実況は複数のファイルを同時に取りに行くので、
 /// ここも同時に呼ばれます。鍵をかけないと記録が壊れて落ちます。
 final class 取得の差し替え: Fetching, @unchecked Sendable {
     private let lock = NSLock()
@@ -190,10 +190,10 @@ final class アメダスを読む: XCTestCase {
         XCTAssertTrue(f.requested.contains { $0.contains("/map/20260908141000.json") })
     }
 
-    func test_過去24時間は欠測を除く() async throws {
+    func test_直近の実況は欠測を除く() async throws {
         let f = fake()
         let client = AmedasClient(fetcher: f)
-        let rows = try await client.past24h(stationCode: "41277",
+        let rows = try await client.recentPast(stationCode: "41277",
                                             observedAt: JST.date(2026, 9, 8, 14, 10))
         XCTAssertEqual(rows.count, 3)                 // 欠測の1点を除く
         XCTAssertLessThan(rows[0].time, rows[2].time) // 時刻順
@@ -201,14 +201,14 @@ final class アメダスを読む: XCTestCase {
     }
 
     func test_同時に取りに行っても記録が壊れない() async throws {
-        // 過去24時間は8つのファイルを同時に取りに行きます
+        // 直近の実況は複数のファイルを同時に取りに行きます
         let f = fake()
         let client = AmedasClient(fetcher: f)
-        _ = try await client.past24h(stationCode: "41277",
+        _ = try await client.recentPast(stationCode: "41277",
                                      observedAt: JST.date(2026, 9, 8, 14, 10))
         let blocks = f.requested.filter { $0.contains("/point/") }
-        XCTAssertEqual(blocks.count, 8)
-        XCTAssertEqual(Set(blocks).count, 8)   // 同じファイルを二度読んでいない
+        XCTAssertEqual(blocks.count, 2)        // 直近1時間ぶんに必要な2ファイル
+        XCTAssertEqual(Set(blocks).count, 2)   // 同じファイルを二度読んでいない
     }
 
     func test_近い順に並ぶ() {

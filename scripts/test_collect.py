@@ -85,17 +85,19 @@ class 表の読み取り(unittest.TestCase):
     def test_見出しが左端の表(self):
         got = collect.series_from_html(ROW_HTML)
         self.assertIsNotNone(got)
-        times, temps, hums = got
+        times, temps, hums, precips = got
         self.assertEqual(times, ["15時", "16時", "17時"])
         self.assertEqual(temps, ["25.0", "24.4", "23.8"])
         self.assertEqual(hums, ["64", "68", "72"])
+        self.assertEqual(precips, ["0.0", "0.0", "0.5"])
 
     def test_見出しが1行目の表(self):
         got = collect.series_from_html(COL_HTML)
         self.assertIsNotNone(got)
-        times, temps, hums = got
+        times, temps, hums, precips = got
         self.assertEqual(times, ["15:00", "16:00", "17:00"])
         self.assertEqual(temps, ["25.0℃", "24.4℃", "23.8℃"])
+        self.assertIsNone(precips)          # この表に降水量の列はありません
 
     def test_湿度がない表は使わない(self):
         html = "<table><tr><td>時刻</td><td>15時</td></tr><tr><td>気温</td><td>25</td></tr></table>"
@@ -460,6 +462,46 @@ class ブラウザで読んだ結果の扱い(unittest.TestCase):
         new = {"ok": True, "hourly": [1], "strategy": "実況"}
         collect_browser.pick_better(old, new)
         self.assertEqual(new["strategy"], "実況")
+
+
+class 降水量の読み取り(unittest.TestCase):
+    """雨量の予報も並びに入れる（Yahoo!天気は表、ウェザーニュースは文字から）"""
+
+    def test_見出しを見分ける(self):
+        self.assertEqual(collect.label_kind("降水量（mm）"), "precip")
+        self.assertEqual(collect.label_kind("降水量(mm/h)"), "precip")
+        self.assertEqual(collect.label_kind("雨量"), "precip")
+        # 降水確率は別物なので拾わない
+        self.assertIsNone(collect.label_kind("降水確率（％）"))
+        self.assertIsNone(collect.label_kind("降水 確率（％）"))
+
+    def test_並びに入る(self):
+        rows = collect.build_hourly(["15時", "16時", "17時"],
+                                    ["25.0", "24.4", "23.8"],
+                                    ["64", "68", "72"],
+                                    ["0.0", "1.5", "---"], now=NOW)
+        self.assertEqual(rows[0]["precip"], 0.0)
+        self.assertEqual(rows[1]["precip"], 1.5)
+        self.assertNotIn("precip", rows[2])      # 読めない値は入れない
+
+    def test_降水量がなくても並びは作る(self):
+        rows = collect.build_hourly(["15時"], ["25.0"], ["64"], None, now=NOW)
+        self.assertEqual(len(rows), 1)
+        self.assertNotIn("precip", rows[0])
+
+    def test_ありえない雨量は入れない(self):
+        rows = collect.build_hourly(["15時"], ["25.0"], ["64"], ["9999"], now=NOW)
+        self.assertNotIn("precip", rows[0])
+
+    def test_表から通しで読む(self):
+        got = collect.series_from_html(ROW_HTML)
+        rows = collect.build_hourly(got[0], got[1], got[2], got[3], now=NOW)
+        self.assertEqual([r.get("precip") for r in rows], [0.0, 0.0, 0.5])
+
+    def test_ウェザーニュースの文字から読む(self):
+        rows = collect.hourly_from_text(WN_TEXT, NOW)
+        self.assertTrue(rows)
+        self.assertTrue(any("precip" in r for r in rows))
 
 
 # =========================================================

@@ -19,6 +19,7 @@ public struct SnapshotFile: Decodable, Sendable {
         public var humidity: Double?
         public var pressure: Double?
         public var pop: Double?
+        public var precip: Double?
     }
     public struct Weekly: Decodable, Sendable {
         public var date: String
@@ -158,7 +159,7 @@ public struct SnapshotClient: Sendable {
             guard let t = JST.parseISO(r.time) else { continue }
             // 気温だけ・湿度だけの提供元もあるので、あるものだけ入れます
             if let row = HourlyRow.make(time: t, temp: r.temp, rh: r.humidity,
-                                        pressure: r.pressure, pop: r.pop) {
+                                        pressure: r.pressure, pop: r.pop, precip: r.precip) {
                 rows.append(row)
             }
         }

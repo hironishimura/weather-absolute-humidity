@@ -155,6 +155,10 @@ def label_kind(text):
     if not text:
         return None
     t = text.replace(" ", "")
+    if "降水確率" in t or "降水 確率" in text:
+        return None                      # 確率は別のところで読みます
+    if "降水量" in t or "雨量" in t:
+        return "precip"
     if "湿度" in t:
         return "humidity"
     if "気温" in t or re.search(r"温度", t):
@@ -174,7 +178,7 @@ def series_from_rows(table):
         if kind and kind not in found:
             found[kind] = row[1:]
     if "temp" in found and "humidity" in found:
-        return found.get("time"), found["temp"], found["humidity"]
+        return found.get("time"), found["temp"], found["humidity"], found.get("precip")
     return None
 
 
@@ -191,16 +195,18 @@ def series_from_cols(table):
     if "temp" not in idx or "humidity" not in idx:
         return None
     need = max(idx.values())
-    times, temps, hums = [], [], []
+    times, temps, hums, precips = [], [], [], []
     for row in table[1:]:
         if len(row) <= need:
             continue
         times.append(row[idx["time"]] if "time" in idx else None)
         temps.append(row[idx["temp"]])
         hums.append(row[idx["humidity"]])
+        precips.append(row[idx["precip"]] if "precip" in idx and idx["precip"] < len(row) else None)
     if not temps:
         return None
-    return (times if "time" in idx else None), temps, hums
+    return ((times if "time" in idx else None), temps, hums,
+            (precips if "precip" in idx else None))
 
 
 def series_from_html(html):
@@ -327,7 +333,7 @@ def series_from_json(html):
                     t = [_pick(r, TEMP_KEYS) for r in rows]
                     h = [_pick(r, HUM_KEYS) for r in rows]
                     if all(x is not None for x in t) and all(x is not None for x in h):
-                        cand = ([_pick(r, TIME_KEYS) for r in rows], t, h)
+                        cand = ([_pick(r, TIME_KEYS) for r in rows], t, h, None)
                         if best is None or len(cand[1]) > len(best[1]):
                             best = cand
                 stack.extend(x for x in node if isinstance(x, (dict, list)))
@@ -540,10 +546,14 @@ def hourly_from_text(text, now=None):
                 hour = int(h.group(1))
                 temp = float(tp.group(1))
                 if 0 <= hour <= 23 and -60 <= temp <= 60:
-                    out.append({
+                    row = {
                         "time": (day + timedelta(hours=hour)).isoformat(),
                         "temp": round(temp, 1),
-                    })
+                    }
+                    rain = to_number(mm.group(1))
+                    if rain is not None and 0 <= rain <= 500:
+                        row["precip"] = round(rain, 1)
+                    out.append(row)
                     i += 3
                     continue
         i += 1
@@ -558,8 +568,8 @@ def hourly_from_text(text, now=None):
 # =========================================================
 # 時刻の組み立て
 # =========================================================
-def build_hourly(times, temps, hums, now=None, start=None):
-    """読み取った文字列を {time, temp, humidity} の並びにする。
+def build_hourly(times, temps, hums, precips=None, now=None, start=None):
+    """読み取った文字列を {time, temp, humidity, precip} の並びにする。
 
     start に前の表の最後の時刻を渡すと、その続きとして日付を進める。
     （Yahoo!天気は「今日」「明日」で表が分かれていて、どちらも 0時 から始まる）
@@ -603,11 +613,15 @@ def build_hourly(times, temps, hums, now=None, start=None):
         if stamp is None:
             stamp = now.replace(minute=0, second=0, microsecond=0) + timedelta(hours=i)
 
-        out.append({
+        row = {
             "time": stamp.isoformat(),
             "temp": round(temp, 1),
             "humidity": round(hum, 1),
-        })
+        }
+        mm = to_number(str(precips[i])) if precips and i < len(precips) and precips[i] is not None else None
+        if mm is not None and 0 <= mm <= 500:
+            row["precip"] = round(mm, 1)
+        out.append(row)
 
     out.sort(key=lambda r: r["time"])
     return out
@@ -668,13 +682,15 @@ def collect_one(name, conf, html=None, now=None):
     if tables:
         ways.append("table×%d" % len(tables))
         for got in tables:
-            hourly += build_hourly(got[0], got[1], got[2], now=now,
+            hourly += build_hourly(got[0], got[1], got[2],
+                                   got[3] if len(got) > 3 else None, now=now,
                                    start=hourly[-1]["time"] if hourly else None)
     else:
         got = series_from_json(html)
         if got:
             ways.append("json")
-            hourly = build_hourly(got[0], got[1], got[2], now=now)
+            hourly = build_hourly(got[0], got[1], got[2],
+                                  got[3] if len(got) > 3 else None, now=now)
 
     # いまの観測値
     obs = current_from_blocks(html) or current_from_labels(html)

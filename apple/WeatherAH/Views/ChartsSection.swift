@@ -43,9 +43,11 @@ struct ChartsSection: View {
                 FieldChart(field: field, days: days)
             }
 
-            Text("過去24時間の実況と、これからの予報をひとつの軸に重ねています。"
+            Text("実況は直近1時間ぶん、あとはこれからの予報です。"
                  + "降水確率は刻みが提供元で違うため、階段の幅が変わります"
-                 + "（気象庁6時間・Yahoo!天気6時間・ウェザーニュース午前午後・数値予報1時間）。")
+                 + "（気象庁6時間・Yahoo!天気6時間・ウェザーニュース午前午後・数値予報1時間）。"
+                 + "雨量は棒で出しています。気象庁の実況は前1時間の降水量、"
+                 + "ほかは1時間あたりの予報値です。")
                 .font(.caption2)
                 .foregroundStyle(.secondary)
         }
@@ -107,19 +109,23 @@ struct ChartsSection: View {
             Chart {
                 ForEach(series) { s in
                     ForEach(s.points) { p in
-                        LineMark(x: .value("時刻", p.time), y: .value(field.title, p.value))
-                            .foregroundStyle(Color(hex: settings.hex(for: s.key)))
-                            .interpolationMethod(field == .pop ? .stepEnd : .catmullRom)
+                        if field.drawsBars {
+                            // 雨量は棒。重なっても見えるよう、少し透かします。
+                            BarMark(x: .value("時刻", p.time),
+                                    y: .value(field.title, p.value))
+                                .foregroundStyle(Color(hex: settings.hex(for: s.key)).opacity(0.55))
+                        } else {
+                            LineMark(x: .value("時刻", p.time),
+                                     y: .value(field.title, p.value))
+                                .foregroundStyle(Color(hex: settings.hex(for: s.key)))
+                                .interpolationMethod(field == .pop ? .stepEnd : .catmullRom)
+                        }
                     }
-                    .foregroundStyle(by: .value("提供元", s.key.short))
                 }
                 RuleMark(x: .value("いま", now))
                     .lineStyle(StrokeStyle(lineWidth: 1, dash: [3, 3]))
                     .foregroundStyle(.secondary)
             }
-            .chartForegroundStyleScale(range: SourceKey.allCases.map {
-                Color(hex: settings.hex(for: $0))
-            })
             .chartLegend(.hidden)
             .chartXScale(domain: from...to)
             .chartYScale(domain: yDomain(series))
@@ -165,6 +171,11 @@ struct ChartsSection: View {
             if let fixed = field.fixedRange { return fixed }
             let values = series.flatMap { $0.points.map(\.value) }
             guard let lo = values.min(), let hi = values.max() else { return 0...1 }
+            if field.startsAtZero {
+                // 雨量は0から。降っていない日でも軸がつぶれないよう、少し余裕を持たせます。
+                let scale = AxisTicks.nice(min: 0, max: Swift.max(hi, 1))
+                return 0...scale.max
+            }
             let scale = AxisTicks.nice(min: lo, max: hi)
             return scale.min...scale.max
         }

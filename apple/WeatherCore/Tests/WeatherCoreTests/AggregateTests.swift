@@ -180,3 +180,39 @@ final class グラフの目盛り: XCTestCase {
         XCTAssertEqual(starts, [JST.date(2026, 9, 10), JST.date(2026, 9, 11)])
     }
 }
+
+
+final class 雨量とグラフの範囲: XCTestCase {
+
+    func test_雨量の項目が増えている() {
+        XCTAssertTrue(ChartField.allCases.contains(.precip))
+        XCTAssertEqual(ChartField.precip.title, "雨量")
+        XCTAssertEqual(ChartField.precip.unit, "mm/h")
+        XCTAssertTrue(ChartField.precip.drawsBars)
+        XCTAssertTrue(ChartField.precip.startsAtZero)
+    }
+
+    func test_雨量だけの点も並びに入る() {
+        // 気温も湿度もなくても、雨量があれば1点として残します
+        let row = HourlyRow.make(time: JST.date(2026, 9, 10, 3), temp: nil, rh: nil, precip: 2.5)
+        XCTAssertEqual(row?.precip, 2.5)
+    }
+
+    func test_なにもなければ点にしない() {
+        XCTAssertNil(HourlyRow.make(time: JST.date(2026, 9, 10, 3),
+                                    temp: nil, rh: nil, pop: nil, precip: nil))
+    }
+
+    func test_グラフの過去は1時間() {
+        XCTAssertEqual(ChartWindow.pastHours, 1)
+        XCTAssertEqual(ChartWindow.span(days: 1), 25)
+        XCTAssertEqual(ChartWindow.span(days: 7), 169)
+    }
+
+    func test_目盛りは過去1時間ぶんでも決められる() {
+        // 1日表示（25時間）と7日表示（169時間）
+        XCTAssertTrue([1, 2, 3, 6, 12, 24].contains(
+            AxisTicks.hours(span: ChartWindow.span(days: 1), usable: 1006).step))
+        XCTAssertEqual(AxisTicks.hours(span: ChartWindow.span(days: 7), usable: 1006).step, 24)
+    }
+}

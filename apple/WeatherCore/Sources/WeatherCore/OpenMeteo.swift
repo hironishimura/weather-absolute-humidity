@@ -30,6 +30,7 @@ public struct OpenMeteoClient: Sendable {
             var relative_humidity_2m: [Double?]?
             var surface_pressure: [Double?]?
             var precipitation_probability: [Double?]?
+            var precipitation: [Double?]?
         }
         var current: Current?
         var hourly: Hourly?
@@ -38,7 +39,7 @@ public struct OpenMeteoClient: Sendable {
     func valuesURL(_ place: Place, withModel: Bool) -> URL {
         var s = "\(Endpoints.openMeteo)?latitude=\(String(format: "%.4f", place.lat))"
             + "&longitude=\(String(format: "%.4f", place.lon))"
-            + "&hourly=temperature_2m,relative_humidity_2m,surface_pressure"
+            + "&hourly=temperature_2m,relative_humidity_2m,surface_pressure,precipitation"
             + "&current=temperature_2m,relative_humidity_2m,surface_pressure"
             + "&timezone=Asia%2FTokyo&forecast_days=10&past_days=1"
         if withModel { s += "&models=jma_seamless" }
@@ -85,7 +86,8 @@ public struct OpenMeteoClient: Sendable {
                       let time = JST.parseISO(text) else { continue }
                 if let row = HourlyRow.make(time: time, temp: t, rh: rh,
                                             pressure: pick(h.surface_pressure),
-                                            pop: popByTime[text]) {
+                                            pop: popByTime[text],
+                                            precip: pick(h.precipitation)) {
                     rows.append(row)
                 }
             }
