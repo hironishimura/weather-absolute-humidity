@@ -285,6 +285,56 @@ WEEK_HTML = """
 """
 
 
+POP6_HTML = """
+<table><tr><td>時間</td><td>0-6</td><td>6-12</td><td>12-18</td><td>18-24</td></tr>
+<tr><td>降水</td><td>10%</td><td>20%</td><td>70%</td><td>80%</td></tr></table>
+<table><tr><td>時間</td><td>0-6</td><td>6-12</td><td>12-18</td><td>18-24</td></tr>
+<tr><td>降水</td><td>60%</td><td>60%</td><td>20%</td><td>20%</td></tr></table>
+"""
+
+POP12_HTML = """
+<table><tr><td>時間</td><td>午前</td><td>午後</td></tr>
+<tr><td>降水確率</td><td>90%</td><td>80%</td></tr></table>
+"""
+
+
+class 時間帯ごとの降水確率(unittest.TestCase):
+
+    def test_6時間ごと(self):
+        got = collect.pops_from_html(POP6_HTML, NOW)
+        self.assertEqual(len(got), 8)
+        self.assertEqual(got[0]["time"], "2026-09-08T00:00:00+09:00")
+        self.assertEqual(got[0]["hours"], 6)
+        self.assertEqual(got[0]["pop"], 10.0)
+
+    def test_2枚目は翌日(self):
+        got = collect.pops_from_html(POP6_HTML, NOW)
+        self.assertEqual(got[4]["time"], "2026-09-09T00:00:00+09:00")
+        self.assertEqual(got[4]["pop"], 60.0)
+
+    def test_午前午後(self):
+        got = collect.pops_from_html(POP12_HTML, NOW)
+        self.assertEqual(len(got), 2)
+        self.assertEqual(got[0]["hours"], 12)
+        self.assertEqual(got[1]["time"], "2026-09-08T12:00:00+09:00")
+        self.assertEqual(got[1]["pop"], 80.0)
+
+    def test_降水量の表は使わない(self):
+        html = POP6_HTML.replace("降水", "降水量")
+        self.assertEqual(collect.pops_from_html(html, NOW), [])
+
+    def test_時刻の見出しが範囲でなければ使わない(self):
+        html = POP6_HTML.replace("0-6", "0時").replace("6-12", "3時")
+        self.assertEqual(collect.pops_from_html(html, NOW), [])
+
+    def test_結果に入る(self):
+        r = collect.collect_one("yahoo", {"enabled": True, "url": "http://example.test/"},
+                                html=POP6_HTML, now=NOW)
+        self.assertTrue(r["ok"])
+        self.assertEqual(len(r["pops"]), 8)
+        self.assertIn("降水確率", r["strategy"])
+
+
 class 週間予報の読み取り(unittest.TestCase):
 
     def test_日付と気温と降水確率(self):

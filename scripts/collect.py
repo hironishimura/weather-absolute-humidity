@@ -335,6 +335,77 @@ def series_from_json(html):
 
 
 # =========================================================
+# 時間帯ごとの降水確率
+# ---------------------------------------------------------
+# Yahoo!天気の地域ページは「0-6 / 6-12 / 12-18 / 18-24」、
+# ウェザーニュースは「午前 / 午後」の区切りで降水確率を出しています。
+# 見出しから時間帯を読み取り、その区切りぶんの確率として並べます。
+# =========================================================
+RANGE_RE = re.compile(r"^\s*(\d{1,2})\s*[-−~〜]\s*(\d{1,2})\s*$")
+NAMED_BLOCKS = {"午前": (0, 12), "午後": (12, 24), "夜": (18, 24), "朝": (6, 12)}
+
+
+def _time_block(text):
+    """見出しから (開始時, 終了時) を読む。読めなければ None。"""
+    t = (text or "").replace(" ", "").replace("時", "")
+    if t in NAMED_BLOCKS:
+        return NAMED_BLOCKS[t]
+    m = RANGE_RE.match(t)
+    if not m:
+        return None
+    a, b = int(m.group(1)), int(m.group(2))
+    if 0 <= a < b <= 24:
+        return (a, b)
+    return None
+
+
+def pops_from_html(html, now=None):
+    """時間帯ごとの降水確率を取り出す。
+
+    同じ形の表が並んでいるときは、上から今日・明日…として扱います。
+    """
+    now = now or datetime.now(JST)
+    base = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    out = []
+    day_index = 0
+
+    for table in read_tables(html):
+        blocks, values = None, None
+        for row in table:
+            if len(row) < 3:
+                continue
+            head = (row[0] or "").replace(" ", "")
+            if blocks is None and ("時間" in head or "時刻" in head):
+                cand = [_time_block(c) for c in row[1:]]
+                if cand and all(c is not None for c in cand):
+                    blocks = cand
+            elif "降水" in head and "量" not in head and values is None:
+                values = row[1:]
+        if not blocks or not values:
+            continue
+
+        day = base + timedelta(days=day_index)
+        got = False
+        for i, blk in enumerate(blocks):
+            if i >= len(values):
+                break
+            p = to_number(values[i])
+            if p is None or not (0 <= p <= 100):
+                continue
+            out.append({
+                "time": (day + timedelta(hours=blk[0])).isoformat(),
+                "hours": blk[1] - blk[0],
+                "pop": p,
+            })
+            got = True
+        if got:
+            day_index += 1
+
+    out.sort(key=lambda r: r["time"])
+    return out
+
+
+# =========================================================
 # 週間予報の読み取り
 # ---------------------------------------------------------
 # Yahoo!天気のページには「日付 / 天気 / 気温（℃） / 降水確率（％）」の
@@ -610,12 +681,22 @@ def collect_one(name, conf, html=None, now=None):
     if obs:
         ways.append("実況")
 
-    if not hourly and not obs and not weekly_from_html(html, now=now):
+    if not hourly and not obs and not pops and not weekly_from_html(html, now=now):
         return {
             "ok": False,
             "url": url,
             "error": "ページから気温と湿度を読み取れませんでした（作りが変わった可能性があります）",
         }
+
+    pops = pops_from_html(html, now=now)
+    pops_url = conf.get("pops_url")
+    if not pops and pops_url:
+        try:
+            pops = pops_from_html(fetch(pops_url), now=now)
+        except (urllib.error.URLError, urllib.error.HTTPError, OSError) as e:
+            print("   （降水確率のページを読めませんでした: %s）" % e)
+    if pops:
+        ways.append("降水確率")
 
     weekly = weekly_from_html(html, now=now)
 
@@ -636,6 +717,7 @@ def collect_one(name, conf, html=None, now=None):
         "strategy": "＋".join(ways),
         "hourly": hourly,
         "weekly": weekly,
+        "pops": pops,
     }
     if obs:
         out["current"] = {
