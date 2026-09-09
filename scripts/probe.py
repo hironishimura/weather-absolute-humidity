@@ -252,6 +252,29 @@ def probe_around(url, pattern):
         print("   …%s…" % " ".join(html[s0:m.start() + 500].split())[:900])
 
 
+def probe_weekly(url):
+    """週間予報らしい表を、中身ごと全部出す。"""
+    print("=" * 70)
+    print("■ 週間らしい表: %s" % url)
+    try:
+        html = collect.fetch(url)
+    except Exception as e:                       # noqa: BLE001
+        print("  取得できませんでした: %s" % e)
+        return
+    for i, t in enumerate(collect.read_tables(html)):
+        if not t:
+            continue
+        labels = [r[0] for r in t if r]
+        flat = " ".join(labels) + " " + " ".join(t[0])
+        if not any(k in flat for k in ("日付", "週間", "月", "日(")):
+            continue
+        if "気温" not in flat:
+            continue
+        print("   表[%d]  %d行" % (i, len(t)))
+        for row in t:
+            print("     %s" % " │ ".join(x[:16] if x else "-" for x in row[:10]))
+
+
 def probe_links(url, keyword):
     print("=" * 70)
     print("■ リンク探し: %s（含む文字: %s）" % (url, keyword))
@@ -277,9 +300,14 @@ def main():
     ap.add_argument("--raw", default=None, help="中身をそのまま見る")
     ap.add_argument("--tables", default=None, help="読める表を全部見る")
     ap.add_argument("--around", default=None, help="ある文字の前後を見る")
+    ap.add_argument("--weekly", default=None, help="週間予報らしい表を中身ごと出す")
     ap.add_argument("--pattern", default="湿度", help="--around で探す文字")
     ap.add_argument("--keyword", default="宇都宮", help="リンク探しの手がかり")
     args = ap.parse_args()
+
+    if args.weekly:
+        probe_weekly(args.weekly)
+        return 0
 
     if args.raw:
         probe_raw(args.raw)

@@ -181,7 +181,7 @@ def main():
         html = rendered["html"]
         if args.dump:
             dump(html, name)
-            dump_text(rendered.get("text"), ["1時間ごと", "湿度", "時間ごとの", "気温"])
+            dump_text(rendered.get("text"), ["週間予報", "週間", "日(木)", "降水確率"])
             continue
         r = collect.collect_one(name, dict(conf, enabled=True), html=html)
         r = add_hourly(r, collect.hourly_from_text(rendered.get("text")), conf)
