@@ -504,6 +504,7 @@ def nearest_now(hourly, now=None):
 # 1つの提供元を処理する
 # =========================================================
 def collect_one(name, conf, html=None, now=None):
+    now = now or datetime.now(JST)
     if not conf.get("enabled"):
         return {"ok": False, "error": "settings.json で enabled が false です"}
     url = conf.get("url")

@@ -238,6 +238,12 @@ class 提供元ごとの処理(unittest.TestCase):
         self.assertTrue(r["ok"])
         self.assertEqual(r["strategy"], "json")
 
+    def test_nowを渡さなくても動く(self):
+        r = collect.collect_one("wni", {"enabled": True, "url": "http://example.test/"},
+                                html=OBS_HTML)
+        self.assertTrue(r["ok"])
+        self.assertEqual(r["current"]["temp"], 26.7)
+
     def test_読めないページは理由を残す(self):
         r = collect.collect_one("yahoo", {"enabled": True, "url": "http://example.test/"},
                                 html="<html><body>売り切れ</body></html>", now=NOW)
