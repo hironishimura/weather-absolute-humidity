@@ -5,12 +5,23 @@ on:
     branches: [probe]
   workflow_dispatch:
 
+env:
+  WN: https://weathernews.jp/onebox/tenki/tochigi/09201/
+
 jobs:
   probe:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: 読み取りの確認
-        run: python3 scripts/test_collect.py
-      - name: 実際に取り込んでみる
-        run: python3 scripts/collect.py --dry-run
+      - name: WN が呼んでいる先
+        continue-on-error: true
+        run: python3 scripts/probe.py --around "$WN" --pattern "axios.get"
+      - name: WN wxdata
+        continue-on-error: true
+        run: python3 scripts/probe.py --around "$WN" --pattern "wxdata"
+      - name: WN apiResults の作り方
+        continue-on-error: true
+        run: python3 scripts/probe.py --around "$WN" --pattern "apiResults ="
+      - name: WN 1時間ごとデータ候補
+        continue-on-error: true
+        run: python3 scripts/probe.py --raw "https://site.weathernews.jp/lba/wxdata/api_data_ss1/1hour?lat=36.54833&lon=139.86833"
