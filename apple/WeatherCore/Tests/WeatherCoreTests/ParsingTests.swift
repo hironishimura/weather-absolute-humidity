@@ -1,24 +1,42 @@
 import XCTest
 @testable import WeatherCore
 
-/// ネットには出ず、作ったデータで読み取りを確かめます
+/// ネットには出ず、作ったデータで読み取りを確かめます。
+///
+/// 過去24時間は8つのファイルを同時に取りに行くので、
+/// ここも同時に呼ばれます。鍵をかけないと記録が壊れて落ちます。
 final class 取得の差し替え: Fetching, @unchecked Sendable {
-    var bodies: [String: Data] = [:]
-    var requested: [String] = []
+    private let lock = NSLock()
+    /// 入れた順に見るので、どれが当たるかが毎回同じになります
+    private var _bodies: [(needle: String, data: Data)] = []
+    private var _requested: [String] = []
+
+    var requested: [String] {
+        lock.lock(); defer { lock.unlock() }
+        return _requested
+    }
 
     func data(from url: URL) async throws -> Data {
-        requested.append(url.absoluteString)
-        for (needle, body) in bodies where url.absoluteString.contains(needle) {
-            return body
-        }
-        throw FetchError.http(404)
+        let text = url.absoluteString
+        lock.lock()
+        _requested.append(text)
+        let hit = _bodies.first { text.contains($0.needle) }?.data
+        lock.unlock()
+
+        guard let hit else { throw FetchError.http(404) }
+        return hit
     }
 
     func put(_ needle: String, json: Any) {
-        bodies[needle] = try! JSONSerialization.data(withJSONObject: json)
+        put(needle, data: try! JSONSerialization.data(withJSONObject: json))
     }
     func put(_ needle: String, text: String) {
-        bodies[needle] = Data(text.utf8)
+        put(needle, data: Data(text.utf8))
+    }
+    private func put(_ needle: String, data: Data) {
+        lock.lock(); defer { lock.unlock() }
+        _bodies.removeAll { $0.needle == needle }
+        _bodies.append((needle, data))
     }
 }
 
@@ -180,6 +198,17 @@ final class アメダスを読む: XCTestCase {
         XCTAssertEqual(rows.count, 3)                 // 欠測の1点を除く
         XCTAssertLessThan(rows[0].time, rows[2].time) // 時刻順
         XCTAssertEqual(rows[0].vh ?? 0, 14.7, accuracy: 0.5)
+    }
+
+    func test_同時に取りに行っても記録が壊れない() async throws {
+        // 過去24時間は8つのファイルを同時に取りに行きます
+        let f = fake()
+        let client = AmedasClient(fetcher: f)
+        _ = try await client.past24h(stationCode: "41277",
+                                     observedAt: JST.date(2026, 9, 8, 14, 10))
+        let blocks = f.requested.filter { $0.contains("/point/") }
+        XCTAssertEqual(blocks.count, 8)
+        XCTAssertEqual(Set(blocks).count, 8)   // 同じファイルを二度読んでいない
     }
 
     func test_近い順に並ぶ() {

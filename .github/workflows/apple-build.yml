@@ -28,10 +28,15 @@ jobs:
       - name: Xcode の場所を出す
         run: xcodebuild -version && swift --version
       - name: テスト
+        # まれにしか出ない壊れ方（同時に取りに行くところなど）を捕まえたいので、
+        # 3回続けて通ることを見ます。
         run: |
           set -o pipefail
-          swift test --package-path apple/WeatherCore 2>&1 \
-            | grep -Ev "^Test Case .* passed|^Test Suite .* passed|' started\.$" 
+          for i in 1 2 3; do
+            echo "── $i 回目"
+            swift test --package-path apple/WeatherCore 2>&1 \
+              | grep -Ev "^Test Case .* passed|^Test Suite .* passed|' started\.$"
+          done
 
   app:
     name: アプリのビルド
