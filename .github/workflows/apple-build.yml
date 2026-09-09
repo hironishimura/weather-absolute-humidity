@@ -73,12 +73,26 @@ jobs:
 
       - name: 中身が入っているか確かめる
         # ソースが1本も入っていなくてもビルドは通ってしまうので、
-        # 出来上がったアプリの実行ファイルがあることを見ておきます。
+        # 出来上がったアプリに実行ファイルが入っていることを見ておきます。
         run: |
           APP=$(find /tmp/dd/Build/Products -maxdepth 2 -name '*.app' | head -1)
           echo "できたもの: $APP"
           if [ -z "$APP" ]; then echo "アプリが見つかりません"; exit 1; fi
-          BIN=$(find "$APP" -type f -perm +111 ! -name '*.dylib' | head -1)
-          SIZE=$(stat -f%z "$BIN")
-          echo "実行ファイル: $BIN（$SIZE バイト）"
-          if [ "$SIZE" -lt 100000 ]; then echo "小さすぎます"; exit 1; fi
+
+          PLIST="$APP/Info.plist"
+          [ -f "$PLIST" ] || PLIST="$APP/Contents/Info.plist"
+          NAME=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$PLIST")
+          BIN="$APP/$NAME"
+          [ -f "$BIN" ] || BIN="$APP/Contents/MacOS/$NAME"
+          if [ ! -f "$BIN" ]; then echo "実行ファイルが見つかりません"; exit 1; fi
+          echo "実行ファイル: $BIN（$(stat -f%z "$BIN") バイト）"
+
+          # 自分で書いた型が実際に入っているか
+          if ! nm -a "$BIN" 2>/dev/null | grep -q 'WeatherAHApp'; then
+            echo "アプリ側のコードが入っていません"; exit 1
+          fi
+          if ! (nm -a "$BIN" 2>/dev/null; \
+                find "$APP" -name 'WeatherCore*' -maxdepth 4) | grep -q 'WeatherCore'; then
+            echo "WeatherCore が入っていません"; exit 1
+          fi
+          echo "中身は入っています（アプリ全体 $(du -sk "$APP" | cut -f1) KB）"
