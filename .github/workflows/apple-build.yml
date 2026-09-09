@@ -56,6 +56,7 @@ jobs:
       - name: ${{ matrix.name }} 向けにビルド
         run: |
           set -o pipefail
+          set -o pipefail
           xcodebuild build \
             -project apple/WeatherAH.xcodeproj \
             -scheme WeatherAH \
@@ -69,3 +70,15 @@ jobs:
             -destination '${{ matrix.destination }}' \
             -derivedDataPath /tmp/dd \
             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY=""
+
+      - name: 中身が入っているか確かめる
+        # ソースが1本も入っていなくてもビルドは通ってしまうので、
+        # 出来上がったアプリの実行ファイルがあることを見ておきます。
+        run: |
+          APP=$(find /tmp/dd/Build/Products -maxdepth 2 -name '*.app' | head -1)
+          echo "できたもの: $APP"
+          if [ -z "$APP" ]; then echo "アプリが見つかりません"; exit 1; fi
+          BIN=$(find "$APP" -type f -perm +111 ! -name '*.dylib' | head -1)
+          SIZE=$(stat -f%z "$BIN")
+          echo "実行ファイル: $BIN（$SIZE バイト）"
+          if [ "$SIZE" -lt 100000 ]; then echo "小さすぎます"; exit 1; fi

@@ -1,0 +1,182 @@
+import XCTest
+@testable import WeatherCore
+
+final class 平均: XCTestCase {
+
+    func nows() -> [SourceKey: NowValue] {
+        [
+            .jma: NowValue(time: nil, values: Reading(temp: 24.0, rh: 70, pressure: 1002)!),
+            .model: NowValue(time: nil, values: Reading(temp: 26.0, rh: 60)!),
+            .yahoo: NowValue(time: nil, values: Reading(temp: 25.0, rh: 65)!)
+        ]
+    }
+
+    func test_取れているぶんだけで平均する() {
+        let a = Aggregate.average(nows())
+        XCTAssertEqual(a.temp ?? 0, 25.0, accuracy: 0.001)
+        XCTAssertEqual(a.rh ?? 0, 65.0, accuracy: 0.001)
+        XCTAssertEqual(a.counts["temp"], 3)
+        XCTAssertEqual(a.used.count, 3)
+    }
+
+    func test_気圧は持っている提供元だけ() {
+        let a = Aggregate.average(nows())
+        XCTAssertEqual(a.counts["pressure"], 1)
+        XCTAssertEqual(a.pressure ?? 0, 1002, accuracy: 0.001)
+    }
+
+    func test_ひとつもなければ空() {
+        let a = Aggregate.average([:])
+        XCTAssertNil(a.temp)
+        XCTAssertTrue(a.used.isEmpty)
+    }
+
+    func test_絶対湿度も平均される() {
+        let a = Aggregate.average(nows())
+        XCTAssertNotNil(a.vh)
+        XCTAssertGreaterThan(a.vh ?? 0, 10)
+    }
+}
+
+final class 日ごとにまとめる: XCTestCase {
+
+    var rows: [HourlyRow] {
+        [
+            HourlyRow.make(time: JST.date(2026, 9, 9, 3), temp: 18, rh: 90)!,
+            HourlyRow.make(time: JST.date(2026, 9, 9, 14), temp: 29, rh: 50)!,
+            HourlyRow.make(time: JST.date(2026, 9, 9, 23), temp: 21, rh: 80)!,
+            HourlyRow.make(time: JST.date(2026, 9, 10, 5), temp: 17, rh: 95)!
+        ]
+    }
+
+    func test_最高と最低() {
+        let d = Aggregate.daily(fromHourly: rows)
+        XCTAssertEqual(d["2026-09-09"]?.max, 29)
+        XCTAssertEqual(d["2026-09-09"]?.min, 18)
+        XCTAssertEqual(d["2026-09-10"]?.max, 17)
+    }
+
+    func test_絶対湿度の幅も出る() {
+        let d = Aggregate.daily(fromHourly: rows)["2026-09-09"]
+        XCTAssertNotNil(d?.vhMin)
+        XCTAssertNotNil(d?.vhMax)
+        XCTAssertLessThan(d!.vhMin!, d!.vhMax!)
+    }
+
+    func test_時間帯の降水確率を日ごとに直す() {
+        let blocks = [
+            PopBlock(time: JST.date(2026, 9, 9, 0), hours: 6, pop: 10),
+            PopBlock(time: JST.date(2026, 9, 9, 6), hours: 6, pop: 70),
+            PopBlock(time: JST.date(2026, 9, 9, 12), hours: 12, pop: 30)
+        ]
+        let byDay = Aggregate.dailyPops(fromBlocks: blocks)
+        XCTAssertEqual(byDay["2026-09-09"], 70)     // その日のいちばん高い値
+    }
+
+    func test_日をまたぐ区切りは両方の日に入る() {
+        let blocks = [PopBlock(time: JST.date(2026, 9, 9, 18), hours: 12, pop: 60)]
+        let byDay = Aggregate.dailyPops(fromBlocks: blocks)
+        XCTAssertEqual(byDay["2026-09-09"], 60)
+        XCTAssertEqual(byDay["2026-09-10"], 60)
+    }
+
+    func test_降水確率が空いている日を埋める() {
+        let jma = [DailyForecast(key: "2026-09-09", date: JST.date(2026, 9, 9), weather: "くもり")]
+        let table = Aggregate.weekly(
+            jmaDaily: jma, modelRows: [], snapshot: [],
+            popBlocks: [.jma: [PopBlock(time: JST.date(2026, 9, 9, 6), hours: 6, pop: 40)]])
+        XCTAssertEqual(table[.jma]?["2026-09-09"]?.pop, 40)
+        XCTAssertEqual(table[.jma]?["2026-09-09"]?.weather, "くもり")
+    }
+
+    func test_発表値があれば上書きしない() {
+        let jma = [DailyForecast(key: "2026-09-09", date: JST.date(2026, 9, 9), pop: 80)]
+        let table = Aggregate.weekly(
+            jmaDaily: jma, modelRows: [], snapshot: [],
+            popBlocks: [.jma: [PopBlock(time: JST.date(2026, 9, 9, 6), hours: 6, pop: 40)]])
+        XCTAssertEqual(table[.jma]?["2026-09-09"]?.pop, 80)
+    }
+
+    func test_週間表があるほうを優先する() {
+        let src = SnapshotSource(
+            key: .yahoo, ok: true, label: "宇都宮", error: nil, now: nil,
+            rows: rows,
+            weekly: [DailyForecast(key: "2026-09-09", date: JST.date(2026, 9, 9),
+                                   weather: "雨", pop: 90, min: 19, max: 25)],
+            pops: [])
+        let table = Aggregate.weekly(jmaDaily: [], modelRows: [], snapshot: [src], popBlocks: [:])
+        let day = table[.yahoo]?["2026-09-09"]
+        XCTAssertEqual(day?.weather, "雨")
+        XCTAssertEqual(day?.max, 25)          // 週間表の値
+        XCTAssertNotNil(day?.vhMax)           // 時間ごとから出した絶対湿度は残る
+    }
+
+    func test_降水確率の階段() {
+        let steps = Aggregate.popSteps([PopBlock(time: JST.date(2026, 9, 9, 6), hours: 6, pop: 40)])
+        XCTAssertEqual(steps.count, 2)
+        XCTAssertEqual(steps[0].pop, 40)
+        XCTAssertEqual(steps[1].time, JST.date(2026, 9, 9, 11, 59))
+    }
+}
+
+final class グラフの目盛り: XCTestCase {
+
+    // 表示範囲は「過去24時間＋先N日」なので 1日=48h・2日=72h・3日=96h・7日=192h
+    func test_広い画面() {
+        XCTAssertEqual(AxisTicks.hours(span: 48, usable: 1006).step, 3)
+        XCTAssertEqual(AxisTicks.hours(span: 72, usable: 1006).step, 3)
+        XCTAssertEqual(AxisTicks.hours(span: 96, usable: 1006).step, 6)
+        XCTAssertEqual(AxisTicks.hours(span: 192, usable: 1006).step, 24)
+    }
+
+    func test_せまい画面() {
+        XCTAssertEqual(AxisTicks.hours(span: 48, usable: 298).step, 6)
+        XCTAssertEqual(AxisTicks.hours(span: 72, usable: 298).step, 6)
+        XCTAssertEqual(AxisTicks.hours(span: 96, usable: 298).step, 12)
+    }
+
+    func test_せまいときは時を省く() {
+        XCTAssertTrue(AxisTicks.hours(span: 48, usable: 1006).withUnit)
+        XCTAssertFalse(AxisTicks.hours(span: 72, usable: 298).withUnit)
+    }
+
+    func test_どんなに狭くても24時間より粗くしない() {
+        XCTAssertEqual(AxisTicks.hours(span: 192, usable: 40).step, 24)
+    }
+
+    func test_刻みは決まった値だけ() {
+        for span in [8.0, 24, 48, 72, 96, 192] {
+            for w in [40.0, 100, 298, 658, 1006, 1400] {
+                XCTAssertTrue([1, 2, 3, 6, 12, 24].contains(AxisTicks.hours(span: span, usable: w).step))
+            }
+        }
+    }
+
+    func test_目盛りの時刻は刻みの倍数() {
+        let from = JST.date(2026, 9, 9, 13, 20)
+        let marks = AxisTicks.hourMarks(from: from, to: from.addingTimeInterval(48 * 3600), step: 6)
+        XCTAssertFalse(marks.isEmpty)
+        for m in marks {
+            XCTAssertEqual((JST.parts(m).hour ?? 1) % 6, 0)
+            XCTAssertGreaterThanOrEqual(m, from)
+        }
+    }
+
+    func test_縦軸はキリのよい数字() {
+        let s = AxisTicks.nice(min: 17.3, max: 29.4)
+        XCTAssertLessThanOrEqual(s.min, 17.3)
+        XCTAssertGreaterThanOrEqual(s.max, 29.4)
+        XCTAssertTrue([1.0, 2.0, 2.5, 5.0, 10.0].contains(s.step))
+    }
+
+    func test_同じ値ばかりでも軸が潰れない() {
+        let s = AxisTicks.nice(min: 20, max: 20)
+        XCTAssertLessThan(s.min, s.max)
+    }
+
+    func test_日の切れ目() {
+        let from = JST.date(2026, 9, 9, 13)
+        let starts = AxisTicks.dayStarts(from: from, to: from.addingTimeInterval(48 * 3600))
+        XCTAssertEqual(starts, [JST.date(2026, 9, 10), JST.date(2026, 9, 11)])
+    }
+}
