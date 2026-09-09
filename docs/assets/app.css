@@ -224,6 +224,7 @@ table{ border-collapse:collapse; width:100%; font-size:.8125rem; }
 .legend__i{ display:flex; align-items:center; gap:7px; }
 .legend__s{ width:18px; height:3px; border-radius:2px; }
 .legend__d{ width:10px; height:10px; border-radius:50%; }
+.legend__r{ width:10px; height:10px; border-radius:50%; border:2px solid currentColor; background:none; }
 .legend__b{ width:12px; height:10px; border-radius:2px; opacity:.55; }
 .charts{ margin-top:10px; display:flex; flex-direction:column; gap:14px; }
 .chart__t{ font-size:.75rem; color:var(--text-mid); font-weight:700; letter-spacing:.08em; }
@@ -231,6 +232,12 @@ table{ border-collapse:collapse; width:100%; font-size:.8125rem; }
 .charts .grid{ stroke:var(--line-soft); stroke-width:1; }
 .charts .axis{ fill:var(--text-mute); font-size:11px; font-family:var(--mono); }
 .charts .now-line{ stroke:var(--text-mute); stroke-width:1.5; stroke-dasharray:3 4; }
+.charts .day-line{ stroke:var(--line); stroke-width:1; }
+.charts .axis--day{ font-size:11px; font-weight:700; fill:var(--text-mid); font-family:var(--gothic); }
+.charts .mark{ font-size:10px; font-family:var(--mono); fill:var(--text-mid); }
+.charts .mark--hi{ fill:var(--warn); }
+.charts .mark--lo{ fill:var(--accent); }
+.charts .mark--w{ font-family:var(--gothic); font-size:11px; fill:var(--text-mid); }
 
 /* ---------- 結露 ---------- */
 .dewcheck{ margin-top:14px; }
