@@ -758,14 +758,34 @@ function loadSnapshot() {
    表示
    --------------------------------------------------------- */
 
-/* 見出しに使う値。気象庁の実況を優先し、湿度がなければ数値予報で補います */
-function primaryNow() {
-  var j = state.now.jma;
-  if (j && j.values && isNum(j.values.rh)) { return { key: 'jma', data: j }; }
-  var m = state.now.model;
-  if (m && m.values) { return { key: 'model', data: m }; }
-  if (j && j.values) { return { key: 'jma', data: j }; }
-  return null;
+/* 見出しに使う値。取れている提供元の平均を出します。
+   気温・相対湿度・絶対湿度…といった項目ごとに、値のあるものだけで平均します。 */
+var AVG_KEYS = ['temp', 'rh', 'vh', 'mr', 'dp', 'di', 'pressure'];
+
+function averageNow() {
+  var keys = ['jma', 'model', 'yahoo', 'weathernews'];
+  var sums = {}, counts = {};
+  var used = [];
+
+  keys.forEach(function (k) {
+    var n = state.now[k];
+    if (!n || !n.values) { return; }
+    used.push(k);
+    AVG_KEYS.forEach(function (f) {
+      var v = n.values[f];
+      if (!isNum(v)) { return; }
+      sums[f] = (sums[f] || 0) + v;
+      counts[f] = (counts[f] || 0) + 1;
+    });
+  });
+
+  if (!used.length) { return null; }
+
+  var values = {};
+  AVG_KEYS.forEach(function (f) {
+    if (counts[f]) { values[f] = sums[f] / counts[f]; }
+  });
+  return { values: values, used: used, counts: counts };
 }
 
 function renderPlace() {
@@ -785,12 +805,16 @@ function renderPlace() {
 }
 
 function renderNow() {
-  var pri = primaryNow();
-  if (!pri) {
+  var avg = averageNow();
+  if (!avg) {
     $('now-meta').textContent = '値を取得できませんでした';
+    ['v-temp', 'v-rh', 'v-vh', 'v-mr', 'v-dp', 'v-pres', 'v-di', 'v-wind', 'v-prec'].forEach(function (id) {
+      $(id).textContent = '--';
+    });
+    renderDew();
     return;
   }
-  var v = pri.data.values;
+  var v = avg.values;
   $('v-temp').textContent = fix(v.temp, 1);
   $('v-rh').textContent = fix(v.rh, 0);
   $('v-vh').textContent = fix(v.vh, 1);
@@ -799,23 +823,31 @@ function renderNow() {
   $('v-pres').innerHTML = fix(v.pressure, 1) + '<span>hPa</span>';
   $('v-di').textContent = fix(v.di, 1);
 
+  /* 風と降水量は気象庁のアメダスだけが出しています */
   var row = state.now.jma && state.now.jma.row;
   $('v-wind').textContent = row ? windText(row) : '--';
   var prec = row ? amedasValue(row, 'precipitation1h') : NaN;
   $('v-prec').innerHTML = (isNum(prec) ? prec.toFixed(1) : '--') + '<span>mm</span>';
 
-  $('now-meta').textContent = (pri.key === 'jma' && state.station)
-    ? 'アメダス ' + state.station.name + ' ・ ' + fmtTime(pri.data.time) + ' 観測'
-    : SOURCES[pri.key].name + ' ・ ' + fmtDateTime(pri.data.time);
+  var names = avg.used.map(function (k) { return SOURCES[k].short; });
+  if (avg.used.length >= 4) {
+    $('now-meta').textContent = avg.used.length + '件の平均';
+  } else if (avg.used.length > 1) {
+    $('now-meta').textContent = avg.used.length + '件の平均（' + names.join('・') + '）';
+  } else {
+    $('now-meta').textContent = names[0] + 'のみ';
+  }
   renderDew();
 }
 
 function renderDew() {
-  var pri = primaryNow();
+  var avg = averageNow();
   var box = $('dew-verdict');
   $('surf-out').textContent = state.surface.toFixed(1);
-  if (!pri) { box.textContent = '—'; box.className = 'dewcheck__verdict'; return; }
-  var dp = pri.data.values.dp;
+  if (!avg || !isNum(avg.values.dp)) {
+    box.textContent = '—'; box.className = 'dewcheck__verdict'; return;
+  }
+  var dp = avg.values.dp;
   var margin = state.surface - dp;
   box.className = 'dewcheck__verdict ' + (margin <= 0 ? 'is-ng' : 'is-ok');
   if (margin <= 0) {
