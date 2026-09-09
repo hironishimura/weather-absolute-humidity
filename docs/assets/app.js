@@ -268,6 +268,7 @@ var state = {
   daily: [],            /* 気象庁の日別予報 */
   pops: [],             /* 気象庁の降水確率（6時間ごと） */
   weekly: {},           /* 提供元ごとの日別予報（取り込みファイル） */
+  popBlocks: {},        /* 提供元ごとの時間帯別の降水確率 */
   overview: '',
   officeName: '',
   status: [],
@@ -678,6 +679,17 @@ function loadSnapshot() {
           });
         });
         if (wk.length) { state.weekly[key] = wk; }
+
+        /* 時間帯ごとの降水確率は、その区切りぶんの階段にする */
+        var pr = [];
+        (s.pops || []).forEach(function (p) {
+          var t0 = new Date(p.time).getTime();
+          if (isNaN(t0) || !isNum(p.pop)) { return; }
+          var span = (isNum(p.hours) ? p.hours : 6) * 3600e3;
+          pr.push({ time: new Date(t0), pop: p.pop });
+          pr.push({ time: new Date(t0 + span - 60e3), pop: p.pop });
+        });
+        if (pr.length) { state.popBlocks[key] = pr; }
         got.push(SOURCES[key].name);
         var kinds = [];
         if (rows.some(function (r) { return isNum(r.temp); })) { kinds.push('気温'); }
@@ -1025,39 +1037,50 @@ function pointRow(entry) {
   return { time: entry.time || new Date(), temp: v.temp, rh: v.rh, vh: v.vh, mr: v.mr };
 }
 
-/* 日ごとの降水確率を、その日いっぱいの階段にする */
-function popStepsFromWeekly(list) {
-  var out = [];
-  (list || []).forEach(function (d) {
+/* 降水確率の階段を作る。
+   時間帯ごとの値を先に置き、その日に値がない日だけ日ごとの値で埋める。 */
+function popRowsFor(key, weeklyByKey) {
+  var blocks = (key === 'jma') ? (state.pops || []) : (state.popBlocks[key] || []);
+  var rows = blocks.slice();
+  var covered = {};
+  blocks.forEach(function (r) { covered[jstKey(r.time)] = true; });
+
+  var days = (weeklyByKey && weeklyByKey[key]) || {};
+  Object.keys(days).forEach(function (day) {
+    if (covered[day]) { return; }
+    var d = days[day];
     if (!isNum(d.pop)) { return; }
-    var t0 = new Date(d.key + 'T00:00:00+09:00').getTime();
+    var t0 = new Date(day + 'T00:00:00+09:00').getTime();
     if (isNaN(t0)) { return; }
-    out.push({ time: new Date(t0), pop: d.pop });
-    out.push({ time: new Date(t0 + 24 * 3600e3 - 60e3), pop: d.pop });
+    rows.push({ time: new Date(t0), pop: d.pop });
+    rows.push({ time: new Date(t0 + 24 * 3600e3 - 60e3), pop: d.pop });
   });
-  out.sort(function (a, b) { return a.time - b.time; });
-  return out;
+  rows.sort(function (a, b) { return a.time - b.time; });
+  return rows;
 }
 
 /* グラフに載せる提供元を集める。実況も予報もひとつの軸に重ねる */
 function chartSeries() {
   var out = [];
+  var weeklyByKey = buildWeekly().byKey;
+  var jmaPops = popRowsFor('jma', weeklyByKey);
 
   if (state.past.length) {
-    out.push({ key: 'jma', color: SOURCES.jma.color, rows: state.past, popRows: state.pops, note: '' });
+    out.push({ key: 'jma', color: SOURCES.jma.color, rows: state.past, popRows: jmaPops, note: '' });
   } else if (state.now.jma && state.now.jma.values) {
     out.push({
       key: 'jma', color: SOURCES.jma.color, rows: [pointRow(state.now.jma)],
-      popRows: state.pops, single: true, note: ''
+      popRows: jmaPops, single: true, note: ''
     });
-  } else if (state.pops.length) {
-    out.push({ key: 'jma', color: SOURCES.jma.color, rows: [], popRows: state.pops, note: '' });
+  } else if (jmaPops.length) {
+    out.push({ key: 'jma', color: SOURCES.jma.color, rows: [], popRows: jmaPops, note: '' });
   }
 
   ['model', 'yahoo', 'weathernews'].forEach(function (k) {
-    /* 時間ごとに降水確率がない提供元は、日ごとの値を階段にして使う */
-    var steps = popStepsFromWeekly(state.weekly[k]);
+    /* 時間ごとに降水確率がある提供元（数値予報）はそのまま、
+       ない提供元は時間帯ごと・日ごとの値を階段にして使う */
     var hasHourlyPop = (state.future[k] || []).some(function (r) { return isNum(r.pop); });
+    var steps = popRowsFor(k, weeklyByKey);
     var popRows = (!hasHourlyPop && steps.length) ? steps : null;
 
     if (state.future[k] && state.future[k].length) {
@@ -1382,6 +1405,7 @@ function refresh() {
   state.daily = [];
   state.pops = [];
   state.weekly = {};
+  state.popBlocks = {};
   state.status = [];
   state.station = null;
   renderStatus();
