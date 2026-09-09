@@ -935,7 +935,10 @@ function chartSeries() {
 
   ['model', 'yahoo', 'weathernews'].forEach(function (k) {
     if (state.future[k] && state.future[k].length) {
-      out.push({ key: k, color: SOURCES[k].color, rows: state.future[k], note: '予報' });
+      out.push({
+        key: k, color: SOURCES[k].color, rows: state.future[k], note: '予報',
+        nowPoint: (state.now[k] && state.now[k].values) ? pointRow(state.now[k]) : null
+      });
     } else if (state.now[k] && state.now[k].values) {
       out.push({
         key: k, color: SOURCES[k].color, rows: [pointRow(state.now[k])],
@@ -982,14 +985,20 @@ function renderChart() {
       /* 降水確率は気象庁だけ別の並び（6時間ごと）から取る */
       var rows = (c.key === 'pop' && g.popRows) ? g.popRows : g.rows;
       var single = g.single && !(c.key === 'pop' && g.popRows);
-      return {
-        color: g.color,
-        single: single,
-        points: rows.filter(function (r) {
-          var t = r.time.getTime();
-          return t >= xMin && t <= xMax && isNum(r[c.key]);
-        }).map(function (r) { return { t: r.time.getTime(), v: r[c.key] }; })
-      };
+      var points = rows.filter(function (r) {
+        var t = r.time.getTime();
+        return t >= xMin && t <= xMax && isNum(r[c.key]);
+      }).map(function (r) { return { t: r.time.getTime(), v: r[c.key] }; });
+
+      /* その項目の時系列がない提供元は、現在値だけでも点で置く */
+      if (!points.length && g.nowPoint && isNum(g.nowPoint[c.key])) {
+        var t0 = g.nowPoint.time.getTime();
+        if (t0 >= xMin && t0 <= xMax) {
+          points = [{ t: t0, v: g.nowPoint[c.key] }];
+          single = true;
+        }
+      }
+      return { color: g.color, single: single, points: points };
     }).filter(function (s) { return s.points.length >= 1; });
 
     if (series.length) {
