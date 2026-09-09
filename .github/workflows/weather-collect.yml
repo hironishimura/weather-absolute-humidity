@@ -52,6 +52,19 @@ jobs:
             python3 scripts/collect.py
           fi
 
+      - name: ブラウザで取り込む（任意）
+        # ページを開いてから画面側で組み立てられる値（ウェザーニュースの1時間ごと予報など）
+        # を取りにいきます。読めたぶんだけ足す作りなので、失敗しても上の結果は残ります。
+        # 不要なら scripts/settings.json の browser.enabled を false にするか、
+        # このステップごと消してください。
+        if: inputs.dry-run != true
+        continue-on-error: true
+        timeout-minutes: 6
+        run: |
+          python3 -m pip install --quiet playwright
+          python3 -m playwright install --with-deps chromium
+          python3 scripts/collect_browser.py
+
       - name: 変わっていれば記録する
         if: inputs.dry-run != true
         run: |

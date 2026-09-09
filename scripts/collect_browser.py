@@ -184,6 +184,7 @@ def main():
             dump_text(rendered.get("text"), ["1時間ごと", "湿度", "時間ごとの", "気温"])
             continue
         r = collect.collect_one(name, dict(conf, enabled=True), html=html)
+        r = add_hourly(r, collect.hourly_from_text(rendered.get("text")), conf)
         if r.get("ok"):
             print("%-12s 読めました（%s・%d時間ぶん）" % (name, r.get("strategy"), len(r.get("hourly", []))))
             results[name] = r
@@ -193,6 +194,38 @@ def main():
     if args.dump or not results:
         return 0
     return merge(settings, results)
+
+
+def add_hourly(result, extra, conf=None):
+    """画面テキストから拾った並びを、いまの結果に足す。
+
+    同じ時刻があれば、欠けている項目だけ埋めます。
+    """
+    if not extra:
+        return result
+    conf = conf or {}
+    out = dict(result)
+    if not out.get("ok"):
+        out = {
+            "ok": True, "url": result.get("url"), "label": conf.get("label", ""),
+            "strategy": "", "hourly": [],
+        }
+    by = {}
+    for r in (out.get("hourly") or []):
+        by[r["time"]] = dict(r)
+    for r in extra:
+        cur = by.get(r["time"])
+        if cur is None:
+            by[r["time"]] = dict(r)
+        else:
+            for k, v in r.items():
+                if k != "time" and cur.get(k) is None:
+                    cur[k] = v
+    out["hourly"] = [by[k] for k in sorted(by)]
+    st = out.get("strategy", "")
+    if "画面テキスト" not in st:
+        out["strategy"] = (st + "＋画面テキスト") if st else "画面テキスト"
+    return out
 
 
 def pick_better(old, new):

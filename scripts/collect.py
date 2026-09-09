@@ -335,6 +335,83 @@ def series_from_json(html):
 
 
 # =========================================================
+# 画面に出ている文字からの読み取り
+# ---------------------------------------------------------
+# ウェザーニュースの1時間ごと予報は表ではなく、画面側で組み立てられる
+# 並びで出ています。単位（ミリ・℃・m/s）を手がかりに拾います。
+# この並びに湿度は入っていないので、取れるのは気温だけです。
+# =========================================================
+DAY_LINE_RE = re.compile(r"^(\d{1,2})日\s*[（(][月火水木金土日][）)]$")
+HOUR_LINE_RE = re.compile(r"^(\d{1,2})$")
+MM_LINE_RE = re.compile(r"^(-?\d+(?:\.\d+)?)\s*ミリ$")
+TEMP_LINE_RE = re.compile(r"^(-?\d+(?:\.\d+)?)\s*[℃度]$")
+
+
+def _date_for_day(day, now):
+    """「9日」から日付を組み立てる。月をまたいでいたら前後の月にずらす。"""
+    base = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    for shift in (0, 1, -1):
+        month = base.month + shift
+        year = base.year
+        if month > 12:
+            month, year = 1, year + 1
+        elif month < 1:
+            month, year = 12, year - 1
+        try:
+            d = base.replace(year=year, month=month, day=day)
+        except ValueError:
+            continue
+        if abs((d - base).days) <= 16:
+            return d
+    return None
+
+
+def hourly_from_text(text, now=None):
+    """画面に出ている文字から「時・降水量・気温」の並びを拾う。
+
+    ウェザーニュースの1時間ごと予報は
+        7日(月) / 9 / 1ミリ / 22℃ / 7m/s / 10 / 1ミリ / 23℃ / …
+    という並びで出ています。日付の見出しと、時・ミリ・℃ の3つ組を探します。
+    """
+    if not text:
+        return []
+    now = now or datetime.now(JST)
+    lines = [x.strip() for x in text.split("\n")]
+    lines = [x for x in lines if x]
+
+    out = []
+    day = None
+    i = 0
+    while i < len(lines):
+        m = DAY_LINE_RE.match(lines[i])
+        if m:
+            day = _date_for_day(int(m.group(1)), now)
+            i += 1
+            continue
+        if day is not None and i + 2 < len(lines):
+            h = HOUR_LINE_RE.match(lines[i])
+            mm = MM_LINE_RE.match(lines[i + 1])
+            tp = TEMP_LINE_RE.match(lines[i + 2])
+            if h and mm and tp:
+                hour = int(h.group(1))
+                temp = float(tp.group(1))
+                if 0 <= hour <= 23 and -60 <= temp <= 60:
+                    out.append({
+                        "time": (day + timedelta(hours=hour)).isoformat(),
+                        "temp": round(temp, 1),
+                    })
+                    i += 3
+                    continue
+        i += 1
+
+    # 同じ時刻が二度出てきたら後のほうを残す
+    seen = {}
+    for r in out:
+        seen[r["time"]] = r
+    return [seen[k] for k in sorted(seen)]
+
+
+# =========================================================
 # 時刻の組み立て
 # =========================================================
 def build_hourly(times, temps, hums, now=None, start=None):

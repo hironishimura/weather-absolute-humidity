@@ -245,7 +245,83 @@ class 提供元ごとの処理(unittest.TestCase):
         self.assertIn("読み取れませんでした", r["error"])
 
 
+WN_TEXT = """最新見解
+日
+時
+天気
+降水
+気温
+風
+9日(水)
+9
+1ミリ
+26℃
+7m/s
+10
+0ミリ
+28℃
+5m/s
+10日(木)
+0
+1ミリ
+19℃
+1m/s
+"""
+
+
+class 画面テキストからの読み取り(unittest.TestCase):
+
+    def test_時刻と気温を拾う(self):
+        rows = collect.hourly_from_text(WN_TEXT, NOW)
+        self.assertEqual(len(rows), 3)
+        self.assertEqual(rows[0]["time"], "2026-09-09T09:00:00+09:00")
+        self.assertEqual(rows[0]["temp"], 26.0)
+        self.assertEqual(rows[2]["time"], "2026-09-10T00:00:00+09:00")
+
+    def test_湿度は入らない(self):
+        rows = collect.hourly_from_text(WN_TEXT, NOW)
+        self.assertNotIn("humidity", rows[0])
+
+    def test_日付の見出しがなければ何も拾わない(self):
+        text = WN_TEXT.replace("9日(水)", "").replace("10日(木)", "")
+        self.assertEqual(collect.hourly_from_text(text, NOW), [])
+
+    def test_月をまたぐ(self):
+        text = "1日(木)\n9\n0ミリ\n15℃\n2m/s\n"
+        rows = collect.hourly_from_text(text, datetime(2026, 9, 29, 12, 0, tzinfo=JST))
+        self.assertEqual(rows[0]["time"], "2026-10-01T09:00:00+09:00")
+
+    def test_ありえない気温は捨てる(self):
+        text = "9日(水)\n9\n0ミリ\n999℃\n2m/s\n"
+        self.assertEqual(collect.hourly_from_text(text, NOW), [])
+
+
 class ブラウザで読んだ結果の扱い(unittest.TestCase):
+
+    def test_画面テキストの並びを足す(self):
+        base = {"ok": True, "hourly": [{"time": "2026-09-09T09:00:00+09:00",
+                                        "temp": 27.0, "humidity": 88.0}], "strategy": "実況"}
+        extra = [{"time": "2026-09-09T09:00:00+09:00", "temp": 26.0},
+                 {"time": "2026-09-09T10:00:00+09:00", "temp": 28.0}]
+        got = collect_browser.add_hourly(base, extra)
+        self.assertEqual(len(got["hourly"]), 2)
+        self.assertEqual(got["hourly"][0]["temp"], 27.0)   # もとの値を上書きしない
+        self.assertEqual(got["hourly"][0]["humidity"], 88.0)
+        self.assertEqual(got["hourly"][1]["temp"], 28.0)
+        self.assertIn("画面テキスト", got["strategy"])
+
+    def test_前が失敗でも並びだけで作る(self):
+        base = {"ok": False, "url": "http://example.test/", "error": "読めません"}
+        extra = [{"time": "2026-09-09T09:00:00+09:00", "temp": 26.0}]
+        got = collect_browser.add_hourly(base, extra, {"label": "宇都宮"})
+        self.assertTrue(got["ok"])
+        self.assertEqual(got["label"], "宇都宮")
+        self.assertEqual(len(got["hourly"]), 1)
+
+    def test_足すものがなければそのまま(self):
+        base = {"ok": True, "hourly": [], "strategy": "実況"}
+        self.assertEqual(collect_browser.add_hourly(base, []), base)
+
 
     def test_増えていれば入れ替える(self):
         old = {"ok": True, "hourly": [1, 2]}
