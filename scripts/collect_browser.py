@@ -173,6 +173,26 @@ def main():
     return merge(settings, results)
 
 
+def pick_better(old, new):
+    """すでにある結果と、ブラウザで読んだ結果のどちらを使うか決める。
+
+    増えていなければ None を返す（そのまま置いておく）。
+    実況が取れているほうの現在値は残す。
+    """
+    old = old or {}
+    old_n = len(old.get("hourly") or [])
+    new_n = len(new.get("hourly") or [])
+    if old.get("ok") and new_n <= old_n:
+        return None
+    out = dict(new)
+    if old.get("current") and old.get("current_is_forecast") is False and \
+            out.get("current_is_forecast") is not False:
+        out["current"] = old["current"]
+        out["current_is_forecast"] = False
+    out["strategy"] = (out.get("strategy", "") + "（ブラウザ）").strip()
+    return out
+
+
 def merge(settings, results):
     """latest.json に、増えたぶんだけ上書きする。"""
     outs = settings.get("outputs") or []
@@ -191,17 +211,11 @@ def merge(settings, results):
     changed = []
     for name, r in results.items():
         old = (data.get("sources") or {}).get(name) or {}
-        old_n = len(old.get("hourly") or [])
-        new_n = len(r.get("hourly") or [])
-        if not old.get("ok") or new_n > old_n:
-            # 実況が取れているならそちらを残す
-            if old.get("current") and old.get("current_is_forecast") is False and \
-                    r.get("current_is_forecast") is not False:
-                r["current"] = old["current"]
-                r["current_is_forecast"] = False
-            r["strategy"] = (r.get("strategy", "") + "（ブラウザ）").strip()
-            data.setdefault("sources", {})[name] = r
-            changed.append("%s %d→%d時間" % (name, old_n, new_n))
+        better = pick_better(old, r)
+        if better:
+            data.setdefault("sources", {})[name] = better
+            changed.append("%s %d→%d時間" % (name, len(old.get("hourly") or []),
+                                            len(better.get("hourly") or [])))
 
     if not changed:
         print("増えるものがなかったので、そのままにします。")

@@ -14,6 +14,7 @@ from datetime import datetime, timedelta, timezone
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import collect  # noqa: E402
+import collect_browser  # noqa: E402
 
 JST = timezone(timedelta(hours=9))
 NOW = datetime(2026, 9, 8, 14, 30, tzinfo=JST)
@@ -242,6 +243,42 @@ class 提供元ごとの処理(unittest.TestCase):
                                 html="<html><body>売り切れ</body></html>", now=NOW)
         self.assertFalse(r["ok"])
         self.assertIn("読み取れませんでした", r["error"])
+
+
+class ブラウザで読んだ結果の扱い(unittest.TestCase):
+
+    def test_増えていれば入れ替える(self):
+        old = {"ok": True, "hourly": [1, 2]}
+        new = {"ok": True, "hourly": [1, 2, 3], "strategy": "table×1"}
+        got = collect_browser.pick_better(old, new)
+        self.assertEqual(len(got["hourly"]), 3)
+        self.assertIn("ブラウザ", got["strategy"])
+
+    def test_増えていなければ触らない(self):
+        old = {"ok": True, "hourly": [1, 2, 3]}
+        new = {"ok": True, "hourly": [1, 2]}
+        self.assertIsNone(collect_browser.pick_better(old, new))
+
+    def test_前が失敗なら入れ替える(self):
+        old = {"ok": False, "error": "読めません"}
+        new = {"ok": True, "hourly": [], "strategy": "実況"}
+        self.assertIsNotNone(collect_browser.pick_better(old, new))
+
+    def test_実況の現在値は残す(self):
+        old = {"ok": True, "hourly": [], "current": {"temp": 26.7, "humidity": 94},
+               "current_is_forecast": False}
+        new = {"ok": True, "hourly": [1, 2], "current": {"temp": 25, "humidity": 80},
+               "current_is_forecast": True, "strategy": "table×1"}
+        got = collect_browser.pick_better(old, new)
+        self.assertEqual(got["current"]["temp"], 26.7)
+        self.assertFalse(got["current_is_forecast"])
+        self.assertEqual(len(got["hourly"]), 2)
+
+    def test_もとの結果は書き換えない(self):
+        old = {"ok": True, "hourly": []}
+        new = {"ok": True, "hourly": [1], "strategy": "実況"}
+        collect_browser.pick_better(old, new)
+        self.assertEqual(new["strategy"], "実況")
 
 
 if __name__ == "__main__":
