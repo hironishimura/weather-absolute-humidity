@@ -185,6 +185,22 @@ def main():
             continue
         r = collect.collect_one(name, dict(conf, enabled=True), html=html)
         r = add_hourly(r, collect.hourly_from_text(rendered.get("text")), conf)
+
+        # 週間予報が別ページにあり、そこも描画しないと読めない場合
+        wk_url = conf.get("weekly_url")
+        if wk_url and not r.get("weekly"):
+            print("%-12s 週間のページも開いています… %s" % (name, wk_url))
+            try:
+                wk = render(sync_playwright, wk_url, b)
+                weekly = collect.weekly_from_html(wk["html"])
+                if weekly:
+                    r["weekly"] = weekly
+                    r["strategy"] = (r.get("strategy", "") + "＋週間")
+                    print("%-12s 週間 %d日ぶん読めました" % (name, len(weekly)))
+                else:
+                    print("%-12s 週間のページからは読み取れませんでした" % name)
+            except Exception as e:              # noqa: BLE001
+                print("%-12s 週間のページを開けませんでした（%s）" % (name, type(e).__name__))
         if r.get("ok"):
             print("%-12s 読めました（%s・%d時間ぶん）" % (name, r.get("strategy"), len(r.get("hourly", []))))
             results[name] = r

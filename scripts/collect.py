@@ -621,9 +621,7 @@ def collect_one(name, conf, html=None, now=None):
 
     # 週間予報が別ページにある提供元のために、もう1枚だけ見に行く
     wk_url = conf.get("weekly_url")
-    if not weekly and wk_url and html is None:
-        pass
-    elif not weekly and wk_url:
+    if not weekly and wk_url:
         try:
             weekly = weekly_from_html(fetch(wk_url), now=now)
         except (urllib.error.URLError, urllib.error.HTTPError, OSError) as e:
