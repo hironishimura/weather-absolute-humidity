@@ -218,7 +218,20 @@ public final class WeatherStore {
     }
 
     /// グラフに出す線。過去の実況（気象庁）と、これからの予報（各社）です。
+    /// 雨量は降っている山ごとに分けて返します。
     public func series(for field: ChartField, days: Int) -> [ChartSeries] {
+        let raw = rawSeries(for: field, days: days)
+        guard field == .precip else { return raw }
+        return raw.flatMap { ChartField.rainSegments($0) }
+    }
+
+    /// その項目に出せる値がひとつでもあるか。
+    /// 雨量が全部0のときに「出せる提供元がありません」と出さないために使います。
+    public func hasAnyValue(for field: ChartField, days: Int) -> Bool {
+        !rawSeries(for: field, days: days).isEmpty
+    }
+
+    private func rawSeries(for field: ChartField, days: Int) -> [ChartSeries] {
         let now = Date()
         let from = now.addingTimeInterval(-ChartWindow.pastSeconds)
         let to = now.addingTimeInterval(TimeInterval(days * 24 * 3600))
@@ -308,6 +321,33 @@ public enum ChartField: String, CaseIterable, Sendable, Identifiable {
     /// 0を下回らない項目
     public var startsAtZero: Bool { self == .pop || self == .precip }
 
+    /// 雨量を「降っている山」だけに切り分けます。
+    /// 0が続く区間は線にしません。平らな0の線は、わずかに降る予報と
+    /// 見分けがつかないためです。山の足元（前後ひとつずつの0）は残して、
+    /// どこから降り出してどこで止むかが分かるようにしています。
+    static func rainSegments(_ s: ChartSeries) -> [ChartSeries] {
+        let pts = s.points
+        guard !pts.isEmpty else { return [] }
+        var keep = [Bool](repeating: false, count: pts.count)
+        for i in pts.indices where pts[i].value > 0 {
+            keep[i] = true
+            if i > 0 { keep[i - 1] = true }
+            if i + 1 < pts.count { keep[i + 1] = true }
+        }
+        var out: [ChartSeries] = []
+        var run: [ChartPoint] = []
+        func flush() {
+            guard !run.isEmpty else { return }
+            out.append(ChartSeries(key: s.key, segment: out.count, points: run))
+            run = []
+        }
+        for i in pts.indices {
+            if keep[i] { run.append(pts[i]) } else { flush() }
+        }
+        flush()
+        return out
+    }
+
     /// 雨量を1時間あたりに直します。
     /// Yahoo!天気は3時間ごとの合計で出しているため、そのまま並べると3倍に見えます。
     static func perHour(_ points: [ChartPoint]) -> [ChartPoint] {
@@ -347,6 +387,8 @@ public struct ChartPoint: Identifiable, Sendable {
 
 public struct ChartSeries: Identifiable, Sendable {
     public var key: SourceKey
+    /// 同じ提供元で線が分かれるときの通し番号（雨量の山ごと）
+    public var segment: Int = 0
     public var points: [ChartPoint]
-    public var id: String { key.rawValue }
+    public var id: String { "\(key.rawValue)#\(segment)" }
 }

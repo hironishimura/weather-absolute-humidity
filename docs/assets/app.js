@@ -1200,7 +1200,7 @@ function lineChart(o) {
     if (isNum(m.min)) { min = Math.min(min, m.min); max = Math.max(max, m.min); }
   });
   if (!isFinite(min) || !isFinite(max)) {
-    wrap.appendChild(el('p', 'empty', 'データがありません'));
+    wrap.appendChild(el('p', 'empty', o.emptyText || 'データがありません'));
     return wrap;
   }
 
@@ -1460,9 +1460,12 @@ function renderChart() {
     { title: '相対湿度', unit: '%', key: 'rh', digits: 0 },
     { title: '絶対湿度', unit: 'g/kg(DA)', key: 'mr', digits: 1 },
     { title: '降水確率', unit: '%', key: 'pop', digits: 0, range: [0, 100] },
-    { title: '雨量', unit: 'mm/h', key: 'precip', digits: 1, dots: true, fromZero: true }
+    { title: '雨量', unit: 'mm/h', key: 'precip', digits: 1, dots: true, fromZero: true,
+      emptyText: 'この期間、雨の予報はありません' }
   ].forEach(function (c) {
-    var series = groups.map(function (g) {
+    var hadValues = false;
+    var series = [];
+    groups.forEach(function (g) {
       var rows = (c.key === 'pop' && g.popRows) ? g.popRows : g.rows;
       var single = g.single && !(c.key === 'pop' && g.popRows);
       var points = rows.filter(function (r) {
@@ -1491,15 +1494,25 @@ function renderChart() {
           points = points.map(function (p) { return { t: p.t, v: p.v / step }; });
         }
       }
-      return { color: g.color, single: single, points: points };
-    }).filter(function (x) { return x.points.length >= 1; });
+      if (!points.length) { return; }
+      hadValues = true;
+      if (c.key === 'precip') {
+        /* 降っていない区間は線を引きません。平らな0の線は、
+           わずかに降る予報と見分けがつかないためです。 */
+        rainSegments(points).forEach(function (seg) {
+          series.push({ color: g.color, single: false, points: seg });
+        });
+        return;
+      }
+      series.push({ color: g.color, single: single, points: points });
+    });
 
-    if (series.length || (c.marks && c.marks.length)) {
+    if (series.length || (c.marks && c.marks.length) || hadValues) {
       box.appendChild(lineChart({
         title: c.title, unit: c.unit, series: series, xMin: xMin, xMax: xMax,
         digits: c.digits, range: c.range, width: chartWidth,
         marks: c.marks, height: c.height, padTop: c.padTop,
-        dots: c.dots, fromZero: c.fromZero
+        dots: c.dots, fromZero: c.fromZero, emptyText: c.emptyText
       }));
     }
   });
@@ -1507,6 +1520,26 @@ function renderChart() {
   if (!box.childNodes.length) {
     box.appendChild(el('p', 'empty', 'この期間に描けるデータがありませんでした。'));
   }
+}
+
+/* 雨量を「降っている山」だけに切り分ける。
+   0が続く区間は線にしません。山の足元（前後ひとつずつの0）は残して、
+   どこから降り出してどこで止むかが分かるようにしています。 */
+function rainSegments(points) {
+  var keep = points.map(function () { return false; });
+  points.forEach(function (p, i) {
+    if (!(p.v > 0)) { return; }
+    keep[i] = true;
+    if (i > 0) { keep[i - 1] = true; }
+    if (i + 1 < points.length) { keep[i + 1] = true; }
+  });
+  var out = [], run = [];
+  points.forEach(function (p, i) {
+    if (keep[i]) { run.push(p); return; }
+    if (run.length) { out.push(run); run = []; }
+  });
+  if (run.length) { out.push(run); }
+  return out;
 }
 
 /* 時間ごとの値を、日ごとにまとめる */

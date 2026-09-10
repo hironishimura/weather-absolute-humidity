@@ -48,7 +48,7 @@ struct ChartsSection: View {
                  + "（気象庁6時間・Yahoo!天気6時間・ウェザーニュース午前午後・数値予報1時間）。"
                  + "雨量は気象庁が前1時間の実測、ほかは予報です。"
                  + "Yahoo!天気は3時間ごとの合計で出しているため、1時間あたりに割って並べています。"
-                 + "小さな丸が実際の値のある時刻です。"
+                 + "小さな丸が実際の値のある時刻です。降っていない区間は線を引いていません。"
                  + "絶対湿度は重量絶対湿度［g/kg(DA)］です。")
                 .font(.caption2)
                 .foregroundStyle(.secondary)
@@ -90,7 +90,10 @@ struct ChartsSection: View {
                     .font(.subheadline.weight(.semibold))
 
                 if series.isEmpty {
-                    Text("この項目を出せる提供元がありません。")
+                    // 雨量が全部0のときは「提供元がない」ではありません
+                    Text(weather.hasAnyValue(for: field, days: days)
+                         ? "この期間、雨の予報はありません。"
+                         : "この項目を出せる提供元がありません。")
                         .font(.caption).foregroundStyle(.secondary)
                         .frame(maxWidth: .infinity, minHeight: 80)
                 } else {
@@ -115,7 +118,7 @@ struct ChartsSection: View {
                         // 色を直に指定すると、線は分かれても全部同じ色になります。
                         LineMark(x: .value("時刻", p.time),
                                  y: .value(field.title, p.value),
-                                 series: .value("提供元", s.key.short))
+                                 series: .value("線", s.id))
                             .foregroundStyle(by: .value("提供元", s.key.short))
                             .interpolationMethod(Self.method(field.interpolation))
                             .symbol(.circle)

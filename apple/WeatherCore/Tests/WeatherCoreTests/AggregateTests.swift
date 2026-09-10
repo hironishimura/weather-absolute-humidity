@@ -250,4 +250,39 @@ final class 雨量とグラフの範囲: XCTestCase {
         let pts = [ChartPoint(time: JST.date(2026, 9, 10, 0), value: 6)]
         XCTAssertEqual(ChartField.perHour(pts).map(\.value), [6])
     }
+
+    /// 0が続く区間に線を引くと、わずかに降る予報と見分けがつきません
+    private func rain(_ values: [Double]) -> [ChartSeries] {
+        let pts = values.enumerated().map {
+            ChartPoint(time: JST.date(2026, 9, 10, 0).addingTimeInterval(Double($0.offset) * 3600),
+                       value: $0.element)
+        }
+        return ChartField.rainSegments(ChartSeries(key: .model, points: pts))
+    }
+
+    func test_降っていない区間は線にしない() {
+        let segs = rain([0, 0, 0, 2, 3, 0, 0, 0, 1, 0, 0])
+        XCTAssertEqual(segs.count, 2)
+        // 山の足元（前後ひとつずつの0）は残します
+        XCTAssertEqual(segs[0].points.map(\.value), [0, 2, 3, 0])
+        XCTAssertEqual(segs[1].points.map(\.value), [0, 1, 0])
+    }
+
+    func test_ずっと降らなければ線はない() {
+        XCTAssertTrue(rain([0, 0, 0, 0]).isEmpty)
+    }
+
+    func test_ずっと降るなら1本のまま() {
+        let segs = rain([1, 2, 3])
+        XCTAssertEqual(segs.count, 1)
+        XCTAssertEqual(segs[0].points.map(\.value), [1, 2, 3])
+    }
+
+    func test_山ごとに別のidになる() {
+        let segs = rain([0, 1, 0, 0, 2, 0])
+        XCTAssertEqual(segs.count, 2)
+        XCTAssertNotEqual(segs[0].id, segs[1].id)
+        // 色分けは提供元で決めるので、key は同じままです
+        XCTAssertEqual(segs[0].key, segs[1].key)
+    }
 }

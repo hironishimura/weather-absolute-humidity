@@ -235,5 +235,15 @@ ctx.loadForecast({ lat: 36.5551, lon: 139.8828 }).then(() => {
   ok('間隔がせまいときは数字だけ', tick(72, 298).unit === false, tick(72, 298).gap);
   ok('どんなに狭くても24時間より粗くしない', tick(192, 40).step === 24, tick(192, 40).step);
 
+  console.log('\n■ 雨の山の切り出し');
+  const rain = vs => ctx.rainSegments(vs.map((v, i) => ({ t: i * 3600e3, v: v })))
+    .map(seg => seg.map(p => p.v));
+  ok('降っていない区間は線にしない',
+     JSON.stringify(rain([0, 0, 0, 2, 3, 0, 0, 0, 1, 0, 0])) === '[[0,2,3,0],[0,1,0]]',
+     JSON.stringify(rain([0, 0, 0, 2, 3, 0, 0, 0, 1, 0, 0])));
+  ok('ずっと降らなければ線はない', rain([0, 0, 0, 0]).length === 0);
+  ok('ずっと降るなら1本のまま',
+     JSON.stringify(rain([1, 2, 3])) === '[[1,2,3]]', JSON.stringify(rain([1, 2, 3])));
+
   console.log('\n' + pass + ' 件確認しました' + (process.exitCode ? '（失敗あり）' : ''));
 });
