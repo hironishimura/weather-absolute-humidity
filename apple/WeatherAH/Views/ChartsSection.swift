@@ -109,18 +109,19 @@ struct ChartsSection: View {
             Chart {
                 ForEach(series) { s in
                     ForEach(s.points) { p in
+                        // 提供元の分け方は foregroundStyle(by:) に任せます。
+                        // 色を直に指定すると、線は分かれても全部同じ色になります。
                         if field.drawsBars {
                             // 雨量は棒。提供元ごとに横へずらして並べます。
                             BarMark(x: .value("時刻", p.time),
                                     y: .value(field.title, p.value))
-                                .foregroundStyle(Color(hex: settings.hex(for: s.key)).opacity(0.75))
-                                .position(by: .value("提供元", s.key.rawValue))
+                                .foregroundStyle(by: .value("提供元", s.key.short))
+                                .position(by: .value("提供元", s.key.short))
                         } else {
-                            // series: を必ず付けます。付け忘れると全社が1本の線につながります。
                             LineMark(x: .value("時刻", p.time),
                                      y: .value(field.title, p.value),
-                                     series: .value("提供元", s.key.rawValue))
-                                .foregroundStyle(Color(hex: settings.hex(for: s.key)))
+                                     series: .value("提供元", s.key.short))
+                                .foregroundStyle(by: .value("提供元", s.key.short))
                                 .interpolationMethod(field == .pop ? .stepEnd : .catmullRom)
                         }
                     }
@@ -130,6 +131,10 @@ struct ChartsSection: View {
                     .foregroundStyle(.secondary)
             }
             .chartLegend(.hidden)
+            // 出せない提供元があっても色がずれないよう、対応をすべて書き出します
+            .chartForegroundStyleScale(
+                domain: SourceKey.allCases.map(\.short),
+                range: SourceKey.allCases.map { Color(hex: settings.hex(for: $0)) })
             .chartXScale(domain: from...to)
             .chartYScale(domain: yDomain(series))
             .chartXAxis {
