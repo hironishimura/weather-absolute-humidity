@@ -22,6 +22,8 @@ jobs:
           curl -sS -o /dev/null -w 'HTTP %{http_code}  %{size_download} bytes\n' \
             -H 'User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36' \
             'https://www.toshin.com/weather/city?pref=%E6%A0%83%E6%9C%A8%E7%9C%8C' || true
+      - name: ECMWF が使えるか
+        run: python3 scripts/probe_ecmwf.py
       - name: 本物のブラウザなら通るか
         run: |
           pip install playwright >/dev/null 2>&1
