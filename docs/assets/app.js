@@ -686,6 +686,8 @@ function loadModel(place, key, models) {
       if (c && isNum(c.temperature_2m) && isNum(c.relative_humidity_2m)) {
         state.now[key] = {
           time: c.time ? new Date(c.time + ':00+09:00') : new Date(),
+          /* 数値予報なので実況ではありません */
+          isForecast: true,
           values: derive(c.temperature_2m, c.relative_humidity_2m,
             isNum(c.surface_pressure) ? c.surface_pressure : undefined)
         };
@@ -1092,7 +1094,7 @@ function renderSources() {
     var head = el('div', 'src__head');
     head.appendChild(el('p', 'src__name', SOURCES[k].name));
 
-    var forecast = (k === 'model') || (n && n.isForecast);
+    var forecast = !!(n && n.isForecast);
     var badge = el('span', 'badge' + (n ? (forecast ? ' badge--fc' : '') : ' badge--none'),
       n ? (forecast ? '予報値' : '実況値') : '未取得');
     head.appendChild(badge);
@@ -1114,11 +1116,10 @@ function renderSources() {
     });
     card.appendChild(vals);
 
+    /* 提供元の説明は「取得状況」にまとめています。ここは値と時刻だけ */
     var note = el('p', 'src__note');
     var when = el('b', null, n.time ? fmtDateTime(n.time) + (forecast ? ' の予報' : ' 時点') : '時刻不明');
     note.appendChild(when);
-    note.appendChild(document.createElement('br'));
-    note.appendChild(document.createTextNode(SOURCES[k].about));
     if (n.fetchedAt) {
       note.appendChild(document.createElement('br'));
       note.appendChild(document.createTextNode('取り込み ' + fmtDateTime(n.fetchedAt)));
@@ -1744,6 +1745,11 @@ function renderStatus() {
     d.appendChild(el('span', 'status__name', s.name));
     d.appendChild(document.createElement('br'));
     d.appendChild(el('span', 'status__msg', s.msg || ''));
+    /* 提供元の説明もここに出します（カードを短くするため） */
+    if (SOURCES[s.key] && SOURCES[s.key].about) {
+      d.appendChild(document.createElement('br'));
+      d.appendChild(el('span', 'status__about', SOURCES[s.key].about));
+    }
     li.appendChild(d);
     ul.appendChild(li);
   });

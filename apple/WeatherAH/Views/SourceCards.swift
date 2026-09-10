@@ -48,10 +48,6 @@ struct SourceCards: View {
                             .font(.subheadline).foregroundStyle(.secondary)
                             .padding(.vertical, 6)
                     }
-                    Text(key.about)
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
         }
