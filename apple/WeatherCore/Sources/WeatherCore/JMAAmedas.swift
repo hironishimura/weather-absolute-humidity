@@ -135,8 +135,12 @@ public struct AmedasClient: Sendable {
             let h = J.amedas(row, "humidity")
             guard t != nil, h != nil else { continue }   // 欠測は捨てます
             let pr = J.amedas(row, "pressure")
+            // 前1時間降水量は毎正時のぶんだけ拾います。
+            // 10分ごとに拾うと、同じ値が6点続いて山がつぶれて見えます
+            let mm = (JST.parts(time).minute ?? 0) == 0
+                ? J.amedas(row, "precipitation1h") : nil
             if let made = HourlyRow.make(time: time, temp: t, rh: h, pressure: pr,
-                                         precip: J.amedas(row, "precipitation1h")) {
+                                         precip: mm) {
                 out.append(made)
             }
         }

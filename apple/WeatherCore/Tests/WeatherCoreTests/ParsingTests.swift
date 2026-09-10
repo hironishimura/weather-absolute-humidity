@@ -152,10 +152,13 @@ final class アメダスを読む: XCTestCase {
             "44132": ["temp": [27.0, 0], "humidity": [55, 0]]
         ])
         f.put("/point/41277/20260908_12.json", json: [
-            "20260908120000": ["temp": [23.5, 0], "humidity": [70, 0], "pressure": [1002.8, 0]],
-            "20260908121000": ["temp": [23.8, 0], "humidity": [69, 0]],
+            "20260908120000": ["temp": [23.5, 0], "humidity": [70, 0], "pressure": [1002.8, 0],
+                               "precipitation1h": [1.5, 0]],
+            "20260908121000": ["temp": [23.8, 0], "humidity": [69, 0],
+                               "precipitation1h": [1.5, 0]],
             "20260908122000": ["temp": [24.0, 0], "humidity": [NSNull(), 5]],   // 欠測
-            "20260908123000": ["temp": [24.2, 0], "humidity": [68, 0]]
+            "20260908123000": ["temp": [24.2, 0], "humidity": [68, 0],
+                               "precipitation1h": [1.5, 0]]
         ])
         return f
     }
@@ -198,6 +201,18 @@ final class アメダスを読む: XCTestCase {
         XCTAssertEqual(rows.count, 3)                 // 欠測の1点を除く
         XCTAssertLessThan(rows[0].time, rows[2].time) // 時刻順
         XCTAssertEqual(rows[0].vh ?? 0, 14.7, accuracy: 0.5)
+    }
+
+    func test_雨量は毎正時のぶんだけ拾う() async throws {
+        // 前1時間降水量は10分ごとに同じ値が出ます。全部拾うと山がつぶれます
+        let f = fake()
+        let client = AmedasClient(fetcher: f)
+        let rows = try await client.recentPast(stationCode: "41277",
+                                            observedAt: JST.date(2026, 9, 8, 14, 10))
+        let withRain = rows.filter { $0.precip != nil }
+        XCTAssertEqual(withRain.count, 1)
+        XCTAssertEqual(withRain.first?.precip, 1.5)
+        XCTAssertEqual(JST.parts(withRain.first!.time).minute, 0)
     }
 
     func test_同時に取りに行っても記録が壊れない() async throws {
