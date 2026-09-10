@@ -110,13 +110,16 @@ struct ChartsSection: View {
                 ForEach(series) { s in
                     ForEach(s.points) { p in
                         if field.drawsBars {
-                            // 雨量は棒。重なっても見えるよう、少し透かします。
+                            // 雨量は棒。提供元ごとに横へずらして並べます。
                             BarMark(x: .value("時刻", p.time),
                                     y: .value(field.title, p.value))
-                                .foregroundStyle(Color(hex: settings.hex(for: s.key)).opacity(0.55))
+                                .foregroundStyle(Color(hex: settings.hex(for: s.key)).opacity(0.75))
+                                .position(by: .value("提供元", s.key.rawValue))
                         } else {
+                            // series: を必ず付けます。付け忘れると全社が1本の線につながります。
                             LineMark(x: .value("時刻", p.time),
-                                     y: .value(field.title, p.value))
+                                     y: .value(field.title, p.value),
+                                     series: .value("提供元", s.key.rawValue))
                                 .foregroundStyle(Color(hex: settings.hex(for: s.key)))
                                 .interpolationMethod(field == .pop ? .stepEnd : .catmullRom)
                         }
