@@ -74,12 +74,14 @@ public final class WeatherStore {
             group.addTask { await self.loadAmedas(place) }
             group.addTask { await self.loadForecast(place) }
             group.addTask { await self.loadModel(place) }
+            group.addTask { await self.loadECMWF(place) }
             group.addTask { await self.loadSnapshot(place) }
             group.addTask { await self.loadAccuracy(place) }
         }
 
         weekly = Aggregate.weekly(jmaDaily: jmaDaily,
                                   modelRows: future[.model] ?? [],
+                                  ecmwfRows: future[.ecmwf] ?? [],
                                   snapshot: snapshotSources,
                                   popBlocks: popBlocks)
         updatedAt = Date()
@@ -134,6 +136,21 @@ public final class WeatherStore {
                                   : "（降水確率は取れませんでした）"))
         } catch {
             setStatus("model", SourceKey.model.name, .failed,
+                      "取得できませんでした（\(error.localizedDescription)）")
+        }
+    }
+
+    /// ECMWF（欧州中期予報センター）の全球モデル。
+    /// 気象庁とは別の計算なので、見通しが立つかどうかの手がかりになります。
+    private func loadECMWF(_ place: Place) async {
+        do {
+            let r = try await model.load(place: place, models: "ecmwf_ifs025", wantsPop: false)
+            future[.ecmwf] = r.rows
+            if let now = r.now { nows[.ecmwf] = now }
+            setStatus("ecmwf", SourceKey.ecmwf.name, .ok,
+                      "\(r.rows.count)時間ぶんの予報を読み込みました（このモデルに降水確率はありません）")
+        } catch {
+            setStatus("ecmwf", SourceKey.ecmwf.name, .failed,
                       "取得できませんでした（\(error.localizedDescription)）")
         }
     }
@@ -205,7 +222,7 @@ public final class WeatherStore {
     public var average: AverageNow { Aggregate.average(nows) }
 
     public var statusOrdered: [StatusLine] {
-        let order = ["jma", "jma_forecast", "model", "yahoo", "weathernews", "snapshot"]
+        let order = ["jma", "jma_forecast", "model", "ecmwf", "yahoo", "weathernews", "snapshot"]
         return status.sorted {
             (order.firstIndex(of: $0.key) ?? 99) < (order.firstIndex(of: $1.key) ?? 99)
         }

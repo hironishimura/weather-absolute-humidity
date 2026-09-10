@@ -401,7 +401,7 @@ table{ border-collapse:collapse; width:100%; font-size:.8125rem; }
     <div class="tile">
       <p class="tile__label">相対湿度</p>
       <p class="tile__value"><span id="v-rh">--</span><span class="tile__unit">%</span></p>
-      <p class="tile__cap">4社の平均</p>
+      <p class="tile__cap">各社の値の平均</p>
     </div>
     <div class="tile tile--accent">
       <p class="tile__label">絶対湿度</p>
@@ -442,7 +442,7 @@ table{ border-collapse:collapse; width:100%; font-size:.8125rem; }
         <button type="button" class="seg__btn" data-days="7">7日</button>
       </div>
     </div>
-    <p class="lead">直近1時間の実況と、これからの予報をひとつの時間軸に並べています。縦の点線が現在時刻です。雨量は気象庁が前1時間の実測、ほかは予報です。Yahoo!天気は3時間ごとの合計で出しているため、1時間あたりに割って並べています。小さな丸が実際の値のある時刻です。</p>
+    <p class="lead">直近1時間の実況と、これからの予報をひとつの時間軸に並べています。縦の点線が現在時刻です。雨量は気象庁が前1時間の実測、ほかは予報です。Yahoo!天気は3時間ごとの合計で出しているため、1時間あたりに割って並べています。小さな丸が実際の値のある時刻です。ECMWFに降水確率はありません。</p>
     <div id="legend" class="legend"></div>
     <details class="colors">
       <summary>色を変える</summary>
@@ -470,12 +470,13 @@ table{ border-collapse:collapse; width:100%; font-size:.8125rem; }
             <th>日付</th>
             <th><span class="wk-dot" data-src="jma"></span>気象庁</th>
             <th><span class="wk-dot" data-src="model"></span>気象庁MSM/GSM</th>
+            <th><span class="wk-dot" data-src="ecmwf"></span>ECMWF</th>
             <th><span class="wk-dot" data-src="yahoo"></span>Yahoo!天気</th>
             <th><span class="wk-dot" data-src="weathernews"></span>ウェザーニュース</th>
           </tr>
         </thead>
         <tbody id="weekly-body">
-          <tr><td colspan="5" class="empty">読み込み中…</td></tr>
+          <tr><td colspan="6" class="empty">読み込み中…</td></tr>
         </tbody>
       </table>
     </div>
@@ -608,8 +609,18 @@ var SOURCES = {
   yahoo:       { name: 'Yahoo!天気', short: 'Yahoo!天気', color: '#C0392B',
                  about: '3時間ごとの予報値です。' },
   weathernews: { name: 'ウェザーニュース', short: 'ウェザーニュース', color: '#1F7A55',
-                 about: '公開ページの実況天気・観測値です。' }
+                 about: '公開ページの実況天気・観測値です。' },
+  ecmwf:       { name: 'ECMWF', short: 'ECMWF', color: '#7B3FA0',
+                 about: '欧州中期予報センターの全球モデル（IFS 0.25°）を Open-Meteo 経由で取得。'
+                        + '気象庁とは別の計算なので、両者が一致していれば見通しが立ち、'
+                        + '割れていれば難しい状況だと分かります。降水確率は出ません。' }
 };
+
+/* 画面に出す順番。ここ1か所で決めます（あちこちに並びを書くと足し忘れます） */
+var SOURCE_KEYS = ['jma', 'model', 'ecmwf', 'yahoo', 'weathernews'];
+
+/* 降水確率の当たり具合を数えている提供元。ECMWFに降水確率はありません */
+var ACC_KEYS = ['jma', 'model', 'yahoo', 'weathernews'];
 
 /* グラフには出さないが取得状況に出す項目の表示名 */
 var STATUS_NAMES = {
@@ -1183,14 +1194,19 @@ function loadForecast(place) {
    絶対湿度の「予報」を出すには数値予報モデルの値が要ります。
    Open-Meteo は気象庁のMSM/GSMを配信していて、APIキーなしで使えます。
    --------------------------------------------------------- */
-function loadModel(place) {
+function loadModel(place, key, models) {
+  key = key || 'model';
+  models = models || 'jma_seamless';
+  /* 降水確率は総合予報からしか取れないので、気象庁モデルのときだけ頼みます */
+  var wantPop = key === 'model';
+
   function url(withModel) {
     var q = '?latitude=' + place.lat.toFixed(4) +
       '&longitude=' + place.lon.toFixed(4) +
       '&hourly=temperature_2m,relative_humidity_2m,surface_pressure,precipitation' +
       '&current=temperature_2m,relative_humidity_2m,surface_pressure' +
       '&timezone=Asia%2FTokyo&forecast_days=10&past_days=1';
-    return OPEN_METEO + q + (withModel ? '&models=jma_seamless' : '');
+    return OPEN_METEO + q + (withModel ? '&models=' + models : '');
   }
 
   /* 降水確率は気象庁のモデル（MSM/GSM）には入っていません。
@@ -1205,7 +1221,7 @@ function loadModel(place) {
 
   return Promise.all([
     getJSON(url(true)).catch(function () { return getJSON(url(false)); }),
-    getJSON(popUrl()).catch(function () { return null; })
+    wantPop ? getJSON(popUrl()).catch(function () { return null; }) : null
   ]).then(function (res) {
       var d = res[0];
       var pops = {};
@@ -1238,22 +1254,24 @@ function loadModel(place) {
           });
         }
       }
-      state.future.model = rows;
+      state.future[key] = rows;
 
       var c = d && d.current;
       if (c && isNum(c.temperature_2m) && isNum(c.relative_humidity_2m)) {
-        state.now.model = {
+        state.now[key] = {
           time: c.time ? new Date(c.time + ':00+09:00') : new Date(),
           values: derive(c.temperature_2m, c.relative_humidity_2m,
             isNum(c.surface_pressure) ? c.surface_pressure : undefined)
         };
       }
-      setStatus('model', true, rows.length + '時間ぶんの予報を読み込みました' +
-        (Object.keys(pops).length ? '（降水確率は Open-Meteo の総合予報）' : '（降水確率は取れませんでした）'));
+      setStatus(key, true, rows.length + '時間ぶんの予報を読み込みました' +
+        (!wantPop ? '（このモデルに降水確率はありません）'
+          : Object.keys(pops).length ? '（降水確率は Open-Meteo の総合予報）'
+          : '（降水確率は取れませんでした）'));
       return rows;
     })
     .catch(function (e) {
-      setStatus('model', false, '取得できませんでした（' + e.message + '）');
+      setStatus(key, false, '取得できませんでした（' + e.message + '）');
     });
 }
 
@@ -1463,7 +1481,7 @@ function renderAccuracy() {
       (meta.updated_at ? '／集計 ' + fmtDateTime(new Date(meta.updated_at)) : '');
   }
 
-  ['jma', 'model', 'yahoo', 'weathernews'].forEach(function (k) {
+  ACC_KEYS.forEach(function (k) {
     var sc = scores[k];
     var card = el('div', 'acc__card');
     card.style.setProperty('--dot', colorOf(k));
@@ -1494,7 +1512,7 @@ function renderAccuracy() {
       tr.appendChild(el('td', 'a-when', periodText(r.start, r.hours)));
       var mm = el('td', 'a-mm' + (r.rain ? ' is-rain' : ''), fix(r.mm, 1) + ' mm');
       tr.appendChild(mm);
-      ['jma', 'model', 'yahoo', 'weathernews'].forEach(function (k) {
+      ACC_KEYS.forEach(function (k) {
         var p = r.pops[k];
         if (!isNum(p)) { tr.appendChild(el('td', 'a-pop a-none', '—')); return; }
         var said = p >= (isNum(meta.say_rain) ? meta.say_rain : 50);
@@ -1539,7 +1557,7 @@ function emptyRow(span, text) {
 var AVG_KEYS = ['temp', 'rh', 'vh', 'mr', 'dp', 'di', 'pressure'];
 
 function averageNow() {
-  var keys = ['jma', 'model', 'yahoo', 'weathernews'];
+  var keys = SOURCE_KEYS;
   var sums = {}, counts = {};
   var used = [];
 
@@ -1637,7 +1655,7 @@ function renderDew() {
 function renderSources() {
   var box = $('srcs');
   box.innerHTML = '';
-  var keys = ['jma', 'model', 'yahoo', 'weathernews'];
+  var keys = SOURCE_KEYS;
   var any = false;
 
   keys.forEach(function (k) {
@@ -1952,7 +1970,7 @@ function chartSeries() {
     out.push({ key: 'jma', color: colorOf('jma'), rows: [], popRows: jmaPops, note: '' });
   }
 
-  ['model', 'yahoo', 'weathernews'].forEach(function (k) {
+  SOURCE_KEYS.filter(function (k) { return k !== 'jma'; }).forEach(function (k) {
     /* 時間ごとに降水確率がある提供元（数値予報）はそのまま、
        ない提供元は時間帯ごと・日ごとの値を階段にして使う */
     var hasHourlyPop = (state.future[k] || []).some(function (r) { return isNum(r.pop); });
@@ -2163,6 +2181,7 @@ function fillPops(days, popByDay) {
 /* 提供元ごとの日別予報を、日付でそろえる */
 function buildWeekly() {
   var byKey = { jma: {}, model: dailyFromHourly(state.future.model || []),
+                ecmwf: dailyFromHourly(state.future.ecmwf || []),
                 yahoo: {}, weathernews: {} };
 
   state.daily.forEach(function (d) {
@@ -2250,7 +2269,7 @@ function renderWeekly() {
   if (!w.days.length) {
     var tr = el('tr');
     var td = el('td', 'empty', '予報を取得できませんでした。');
-    td.colSpan = 5;
+    td.colSpan = SOURCE_KEYS.length + 1;
     tr.appendChild(td);
     body.appendChild(tr);
     $('weekly-note').textContent = '';
@@ -2263,13 +2282,13 @@ function renderWeekly() {
     var d = new Date(day + 'T00:00:00+09:00');
     var dateCell = el('td', 'w-date' + (day === today ? ' is-today' : ''), fmtDate(d));
     tr.appendChild(dateCell);
-    ['jma', 'model', 'yahoo', 'weathernews'].forEach(function (k) {
+    SOURCE_KEYS.forEach(function (k) {
       tr.appendChild(weeklyCell(k, w.byKey[k][day]));
     });
     body.appendChild(tr);
   });
 
-  var have = ['jma', 'model', 'yahoo', 'weathernews'].filter(function (k) {
+  var have = SOURCE_KEYS.filter(function (k) {
     return Object.keys(w.byKey[k]).length > 0;
   }).map(function (k) { return SOURCES[k].name; });
   $('weekly-note').textContent =
@@ -2286,7 +2305,7 @@ function renderWeekly() {
 function renderStatus() {
   var ul = $('status-list');
   ul.innerHTML = '';
-  var order = ['jma', 'jma_forecast', 'model', 'yahoo', 'weathernews', 'snapshot'];
+  var order = ['jma', 'jma_forecast', 'model', 'ecmwf', 'yahoo', 'weathernews', 'snapshot'];
   var sorted = state.status.slice().sort(function (a, b) {
     return order.indexOf(a.key) - order.indexOf(b.key);
   });
@@ -2308,7 +2327,7 @@ function renderColorPickers() {
   var box = $('color-grid');
   if (!box) { return; }
   box.innerHTML = '';
-  ['jma', 'model', 'yahoo', 'weathernews'].forEach(function (k) {
+  SOURCE_KEYS.forEach(function (k) {
     var row = el('label', 'colors__row');
     var input = document.createElement('input');
     input.type = 'color';
@@ -2495,7 +2514,8 @@ function refresh() {
     .then(function (hit) {
       var jobs = [
         loadForecast(state.place),
-        loadModel(state.place),
+        loadModel(state.place, 'model', 'jma_seamless'),
+        loadModel(state.place, 'ecmwf', 'ecmwf_ifs025'),
         loadSnapshot(),
         loadAccuracy()
       ];

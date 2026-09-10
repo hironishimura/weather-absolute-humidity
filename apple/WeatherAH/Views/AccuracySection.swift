@@ -16,7 +16,7 @@ struct AccuracySection: View {
             }
 
             LazyVGrid(columns: [.cards(minimum: 200)], spacing: 14) {
-                ForEach(SourceKey.allCases) { key in
+                ForEach(SourceKey.withPop) { key in
                     Card(key: key,
                          color: Color(hex: settings.hex(for: key)),
                          score: weather.accuracy?.scores[key])
@@ -72,7 +72,7 @@ struct AccuracySection: View {
                 .foregroundStyle(p.rain ? Color.accentColor : .primary)
                 .fontWeight(p.rain ? .bold : .regular)
                 .frame(width: 80, alignment: .leading)
-            ForEach(SourceKey.allCases) { key in
+            ForEach(SourceKey.withPop) { key in
                 Group {
                     if let pop = p.pops[key], let hit = acc.isHit(p, key) {
                         Text("\(Format.number(pop, 0))% \(hit ? "○" : "×")")

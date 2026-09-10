@@ -93,6 +93,7 @@ public enum Aggregate {
     /// 1週間の表。提供元ごとに、日付キー → その日の予報。
     public static func weekly(jmaDaily: [DailyForecast],
                               modelRows: [HourlyRow],
+                              ecmwfRows: [HourlyRow] = [],
                               snapshot: [SnapshotSource],
                               popBlocks: [SourceKey: [PopBlock]]) -> [SourceKey: [String: DailyForecast]] {
         var out: [SourceKey: [String: DailyForecast]] = [:]
@@ -102,6 +103,7 @@ public enum Aggregate {
         out[.jma] = jma
 
         out[.model] = daily(fromHourly: modelRows)
+        out[.ecmwf] = daily(fromHourly: ecmwfRows)
 
         for src in snapshot where src.ok {
             var byKey = daily(fromHourly: src.rows)
