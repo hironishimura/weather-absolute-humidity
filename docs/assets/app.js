@@ -1302,29 +1302,6 @@ function lineChart(o) {
     }
   });
 
-  /* 棒（雨量）。重なっても見えるよう、少し透かして細めに置く。 */
-  if (o.bars) {
-    var slots = o.series.length || 1;
-    var span = (o.xMax - o.xMin) / 3600e3;                 /* 表示している時間の幅 */
-    var full = Math.max((W - PL - PR) / Math.max(span, 1), 2);   /* 1時間ぶんの横幅 */
-    var bw = Math.max(full / slots - 0.5, 1);
-    o.series.forEach(function (s, si) {
-      s.points.forEach(function (p) {
-        if (!(p.v > 0)) { return; }                        /* 0mm は描かない */
-        var top = y(p.v);
-        var base = y(sc.min);
-        var left = x(p.t) - full / 2 + si * (bw + 0.5);
-        svg.appendChild(svgEl('rect', {
-          x: left.toFixed(1), y: top.toFixed(1),
-          width: bw.toFixed(1), height: Math.max(base - top, 1).toFixed(1),
-          fill: s.color, opacity: '.6'
-        }));
-      });
-    });
-    wrap.appendChild(svg);
-    return wrap;
-  }
-
   /* 折れ線（値がひとつしかない提供元は丸で置く） */
   o.series.forEach(function (s) {
     if (!s.points.length) { return; }
@@ -1343,6 +1320,14 @@ function lineChart(o) {
       d: d, fill: 'none', stroke: s.color, 'stroke-width': 2,
       'stroke-linejoin': 'round', 'stroke-linecap': 'round'
     }));
+    /* 雨量は提供元で刻みが違うので、どこが実際の値かを小さな丸で示す */
+    if (o.dots) {
+      s.points.forEach(function (p) {
+        svg.appendChild(svgEl('circle', {
+          cx: x(p.t).toFixed(1), cy: y(p.v).toFixed(1), r: 2.5, fill: s.color, stroke: 'none'
+        }));
+      });
+    }
   });
 
   wrap.appendChild(svg);
@@ -1475,11 +1460,11 @@ function renderChart() {
     { title: '相対湿度', unit: '%', key: 'rh', digits: 0 },
     { title: '絶対湿度', unit: 'g/kg(DA)', key: 'mr', digits: 1 },
     { title: '降水確率', unit: '%', key: 'pop', digits: 0, range: [0, 100] },
-    { title: '雨量', unit: 'mm/h', key: 'precip', digits: 1, bars: true, fromZero: true }
+    { title: '雨量', unit: 'mm/h', key: 'precip', digits: 1, dots: true, fromZero: true }
   ].forEach(function (c) {
     var series = groups.map(function (g) {
       var rows = (c.key === 'pop' && g.popRows) ? g.popRows : g.rows;
-      var single = g.single && !(c.key === 'pop' && g.popRows) && !c.bars;
+      var single = g.single && !(c.key === 'pop' && g.popRows);
       var points = rows.filter(function (r) {
         var t = r.time.getTime();
         return t >= xMin && t <= xMax && isNum(r[c.key]);
@@ -1514,7 +1499,7 @@ function renderChart() {
         title: c.title, unit: c.unit, series: series, xMin: xMin, xMax: xMax,
         digits: c.digits, range: c.range, width: chartWidth,
         marks: c.marks, height: c.height, padTop: c.padTop,
-        bars: c.bars, fromZero: c.fromZero
+        dots: c.dots, fromZero: c.fromZero
       }));
     }
   });

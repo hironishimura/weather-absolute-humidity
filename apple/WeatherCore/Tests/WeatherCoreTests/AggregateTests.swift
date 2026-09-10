@@ -188,8 +188,13 @@ final class 雨量とグラフの範囲: XCTestCase {
         XCTAssertTrue(ChartField.allCases.contains(.precip))
         XCTAssertEqual(ChartField.precip.title, "雨量")
         XCTAssertEqual(ChartField.precip.unit, "mm/h")
-        XCTAssertTrue(ChartField.precip.drawsBars)
         XCTAssertTrue(ChartField.precip.startsAtZero)
+        // 折れ線で出します。刻みの違う提供元があるので点も見せます
+        XCTAssertTrue(ChartField.precip.showsPoints)
+        XCTAssertEqual(ChartField.precip.interpolation, .straight)
+        XCTAssertEqual(ChartField.pop.interpolation, .stepEnd)
+        XCTAssertEqual(ChartField.temp.interpolation, .smooth)
+        XCTAssertFalse(ChartField.temp.showsPoints)
     }
 
     func test_雨量だけの点も並びに入る() {

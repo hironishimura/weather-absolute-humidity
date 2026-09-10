@@ -295,8 +295,16 @@ public enum ChartField: String, CaseIterable, Sendable, Identifiable {
         }
     }
     public var fixedRange: ClosedRange<Double>? { self == .pop ? 0...100 : nil }
-    /// 雨量は棒で出します（線だとゼロが続く区間が読みにくいため）
-    public var drawsBars: Bool { self == .precip }
+    /// 雨量は刻みが提供元で違うので、値のある時刻を小さな丸で示します
+    public var showsPoints: Bool { self == .precip }
+    /// 線のつなぎ方。降水確率は階段、雨量はまっすぐ、ほかはなめらかに
+    public var interpolation: LineShape {
+        switch self {
+        case .pop: return .stepEnd
+        case .precip: return .straight
+        default: return .smooth
+        }
+    }
     /// 0を下回らない項目
     public var startsAtZero: Bool { self == .pop || self == .precip }
 
@@ -324,6 +332,11 @@ public enum ChartField: String, CaseIterable, Sendable, Identifiable {
         case .precip: return row.precip
         }
     }
+}
+
+/// 線のつなぎ方。Charts に依らずここで決めておきます
+public enum LineShape: Sendable {
+    case smooth, straight, stepEnd
 }
 
 public struct ChartPoint: Identifiable, Sendable {

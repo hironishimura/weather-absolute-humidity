@@ -46,8 +46,9 @@ struct ChartsSection: View {
             Text("実況は直近1時間ぶん、あとはこれからの予報です。"
                  + "降水確率は刻みが提供元で違うため、階段の幅が変わります"
                  + "（気象庁6時間・Yahoo!天気6時間・ウェザーニュース午前午後・数値予報1時間）。"
-                 + "雨量は棒で出しています。気象庁は前1時間の実測、ほかは予報です。"
+                 + "雨量は気象庁が前1時間の実測、ほかは予報です。"
                  + "Yahoo!天気は3時間ごとの合計で出しているため、1時間あたりに割って並べています。"
+                 + "小さな丸が実際の値のある時刻です。"
                  + "絶対湿度は重量絶対湿度［g/kg(DA)］です。")
                 .font(.caption2)
                 .foregroundStyle(.secondary)
@@ -112,19 +113,13 @@ struct ChartsSection: View {
                     ForEach(s.points) { p in
                         // 提供元の分け方は foregroundStyle(by:) に任せます。
                         // 色を直に指定すると、線は分かれても全部同じ色になります。
-                        if field.drawsBars {
-                            // 雨量は棒。提供元ごとに横へずらして並べます。
-                            BarMark(x: .value("時刻", p.time),
-                                    y: .value(field.title, p.value))
-                                .foregroundStyle(by: .value("提供元", s.key.short))
-                                .position(by: .value("提供元", s.key.short))
-                        } else {
-                            LineMark(x: .value("時刻", p.time),
-                                     y: .value(field.title, p.value),
-                                     series: .value("提供元", s.key.short))
-                                .foregroundStyle(by: .value("提供元", s.key.short))
-                                .interpolationMethod(field == .pop ? .stepEnd : .catmullRom)
-                        }
+                        LineMark(x: .value("時刻", p.time),
+                                 y: .value(field.title, p.value),
+                                 series: .value("提供元", s.key.short))
+                            .foregroundStyle(by: .value("提供元", s.key.short))
+                            .interpolationMethod(Self.method(field.interpolation))
+                            .symbol(.circle)
+                            .symbolSize(field.showsPoints ? 18 : 0)
                     }
                 }
                 RuleMark(x: .value("いま", now))
@@ -173,6 +168,14 @@ struct ChartsSection: View {
                         }
                     }
                 }
+            }
+        }
+
+        private static func method(_ shape: LineShape) -> InterpolationMethod {
+            switch shape {
+            case .smooth: return .catmullRom
+            case .straight: return .linear
+            case .stepEnd: return .stepEnd
             }
         }
 
