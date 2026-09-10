@@ -99,19 +99,34 @@ struct ChartsSection: View {
                         .frame(maxWidth: .infinity, minHeight: 80)
                 } else {
                     GeometryReader { geo in
+                        let usable = max(geo.size.width - 60, 60)
                         let tick = AxisTicks.hours(span: ChartWindow.span(days: days),
-                                                   usable: max(geo.size.width - 60, 60))
-                        chart(series: series, from: from, to: to, now: now, tick: tick)
+                                                   usable: usable)
+                        chart(series: series, marks: marks(from: from, to: to, usable: usable),
+                              from: from, to: to, now: now, tick: tick)
                     }
-                    .frame(height: field == .temp ? 210 : 160)
+                    .frame(height: field == .temp ? 230 : 160)
                 }
             }
             .padding(.vertical, 2)
         }
 
+        /// 気温のグラフにだけ、日ごとの最高・最低を重ねます。
+        /// せまくて字が重なる日は落とします（Web版と同じ考え方）。
+        private func marks(from: Date, to: Date, usable: CGFloat) -> [DayMark] {
+            guard field == .temp else { return [] }
+            let span = ChartWindow.span(days: days)
+            return weather.dailyMarks(days: days).filter { m in
+                let hours = m.visibleHours(from: from, to: to)
+                return hours / span * Double(usable) >= 40
+            }
+        }
+
         @ViewBuilder
-        private func chart(series: [ChartSeries], from: Date, to: Date, now: Date,
+        private func chart(series: [ChartSeries], marks: [DayMark],
+                           from: Date, to: Date, now: Date,
                            tick: AxisTicks.Hour) -> some View {
+            let jma = Color(hex: settings.hex(for: .jma))
             Chart {
                 ForEach(series) { s in
                     ForEach(s.points) { p in
@@ -129,6 +144,49 @@ struct ChartsSection: View {
                 RuleMark(x: .value("いま", now))
                     .lineStyle(StrokeStyle(lineWidth: 1, dash: [3, 3]))
                     .foregroundStyle(.secondary)
+
+                // 気象庁の日ごとの最高・最低。線ではなく印なので、
+                // 提供元ごとの色分けとは別に気象庁の色で描きます。
+                ForEach(marks) { m in
+                    let mid = m.mid(from: from, to: to)
+                    let wide = m.visibleHours(from: from, to: to)
+                        / ChartWindow.span(days: days) * 100
+                    if let hi = m.high, let lo = m.low {
+                        RuleMark(x: .value("日", mid),
+                                 yStart: .value("最低", lo),
+                                 yEnd: .value("最高", hi))
+                            .foregroundStyle(jma.opacity(0.45))
+                            .lineStyle(StrokeStyle(lineWidth: 1))
+                    }
+                    if let hi = m.high {
+                        PointMark(x: .value("日", mid), y: .value("最高", hi))
+                            .symbol { Circle().stroke(jma, lineWidth: 2).frame(width: 8, height: 8) }
+                            .annotation(position: .trailing, spacing: 3) {
+                                Text("\(Int(hi.rounded()))°")
+                                    .font(.caption2.weight(.semibold))
+                                    .foregroundStyle(.red)
+                            }
+                    }
+                    if let lo = m.low {
+                        PointMark(x: .value("日", mid), y: .value("最低", lo))
+                            .symbol { Circle().stroke(jma, lineWidth: 2).frame(width: 8, height: 8) }
+                            .annotation(position: .trailing, spacing: 3) {
+                                Text("\(Int(lo.rounded()))°")
+                                    .font(.caption2.weight(.semibold))
+                                    .foregroundStyle(.blue)
+                            }
+                    }
+                    if !m.weather.isEmpty, wide >= 12, let hi = m.high {
+                        PointMark(x: .value("日", mid), y: .value("最高", hi))
+                            .symbolSize(0)
+                            .annotation(position: .top, spacing: 2) {
+                                Text(m.weather)
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(1)
+                            }
+                    }
+                }
             }
             .chartLegend(.hidden)
             // 出せない提供元があっても色がずれないよう、対応をすべて書き出します
@@ -136,7 +194,7 @@ struct ChartsSection: View {
                 domain: SourceKey.allCases.map(\.short),
                 range: SourceKey.allCases.map { Color(hex: settings.hex(for: $0)) })
             .chartXScale(domain: from...to)
-            .chartYScale(domain: yDomain(series))
+            .chartYScale(domain: yDomain(series, marks: marks))
             .chartXAxis {
                 // 日の変わり目には日付を出します（Web版と同じ）
                 AxisMarks(values: AxisTicks.dayStarts(from: from, to: to)) { value in
@@ -183,9 +241,12 @@ struct ChartsSection: View {
             }
         }
 
-        private func yDomain(_ series: [ChartSeries]) -> ClosedRange<Double> {
+        private func yDomain(_ series: [ChartSeries], marks: [DayMark]) -> ClosedRange<Double> {
             if let fixed = field.fixedRange { return fixed }
-            let values = series.flatMap { $0.points.map(\.value) }
+            // 日ごとの最高・最低も軸に入れます。入れないと丸印が枠から出ます
+            var values = series.flatMap { $0.points.map(\.value) }
+            values += marks.compactMap(\.high)
+            values += marks.compactMap(\.low)
             guard let lo = values.min(), let hi = values.max() else { return 0...1 }
             if field.startsAtZero {
                 // 雨量は0から。降っていない日でも軸がつぶれないよう、少し余裕を持たせます。
@@ -193,7 +254,10 @@ struct ChartsSection: View {
                 return 0...scale.max
             }
             let scale = AxisTicks.nice(min: lo, max: hi)
-            return scale.min...scale.max
+            // 天気の字を上に出すぶん、気温だけ少し上に余白を取ります
+            guard !marks.isEmpty else { return scale.min...scale.max }
+            let head = (scale.max - scale.min) * 0.18
+            return scale.min...(scale.max + head)
         }
     }
 }

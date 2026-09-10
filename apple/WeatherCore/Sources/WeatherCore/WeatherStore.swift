@@ -242,6 +242,28 @@ public final class WeatherStore {
         return raw.flatMap { ChartField.rainSegments($0) }
     }
 
+    /// 気温グラフに重ねる、日ごとの最高・最低と天気（気象庁の予報）。
+    /// Web版と同じで、日の真ん中に縦棒と丸で置きます。
+    public func dailyMarks(days: Int) -> [DayMark] {
+        let now = Date()
+        let from = now.addingTimeInterval(-ChartWindow.pastSeconds)
+        let to = now.addingTimeInterval(TimeInterval(days * 24 * 3600))
+        guard let jma = weekly[.jma] else { return [] }
+
+        var out: [DayMark] = []
+        var day = JST.startOfDay(from)
+        while day < to {
+            let end = day.addingTimeInterval(24 * 3600)
+            if let d = jma[JST.dayKey(day)],
+               d.max != nil || d.min != nil || !d.weather.isEmpty {
+                out.append(DayMark(dayKey: JST.dayKey(day), start: day, end: end,
+                                   high: d.max, low: d.min, weather: d.weather))
+            }
+            day = end
+        }
+        return out
+    }
+
     /// その項目に出せる値がひとつでもあるか。
     /// 雨量が全部0のときに「出せる提供元がありません」と出さないために使います。
     public func hasAnyValue(for field: ChartField, days: Int) -> Bool {
@@ -394,6 +416,31 @@ public enum ChartField: String, CaseIterable, Sendable, Identifiable {
 /// 線のつなぎ方。Charts に依らずここで決めておきます
 public enum LineShape: Sendable {
     case smooth, straight, stepEnd
+}
+
+/// 気温グラフに重ねる、1日ぶんの最高・最低と天気
+public struct DayMark: Identifiable, Sendable {
+    public var dayKey: String
+    public var start: Date
+    public var end: Date
+    public var high: Double?
+    public var low: Double?
+    public var weather: String
+
+    public var id: String { dayKey }
+
+    /// 画面に見えている部分の真ん中。端の日は切れたぶんを除いて置きます
+    public func mid(from: Date, to: Date) -> Date {
+        let a = Swift.max(start, from), b = Swift.min(end, to)
+        return Date(timeIntervalSince1970:
+                        (a.timeIntervalSince1970 + b.timeIntervalSince1970) / 2)
+    }
+
+    /// 画面に見えている幅［時間］。せまい日は数字を出しません
+    public func visibleHours(from: Date, to: Date) -> Double {
+        let a = Swift.max(start, from), b = Swift.min(end, to)
+        return Swift.max(b.timeIntervalSince(a) / 3600, 0)
+    }
 }
 
 public struct ChartPoint: Identifiable, Sendable {

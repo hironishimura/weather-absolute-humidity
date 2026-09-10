@@ -221,6 +221,32 @@ final class 雨量とグラフの範囲: XCTestCase {
         XCTAssertEqual(AxisTicks.hours(span: ChartWindow.span(days: 7), usable: 1006).step, 24)
     }
 
+    func test_日ごとの印は見えている幅で真ん中を決める() {
+        let day = JST.date(2026, 9, 10)
+        let m = DayMark(dayKey: "2026-09-10", start: day,
+                        end: day.addingTimeInterval(24 * 3600),
+                        high: 29, low: 19, weather: "くもり")
+        // まるごと見えていれば正午が真ん中
+        let whole = m.mid(from: day, to: day.addingTimeInterval(24 * 3600))
+        XCTAssertEqual(JST.parts(whole).hour, 12)
+        XCTAssertEqual(m.visibleHours(from: day, to: day.addingTimeInterval(24 * 3600)), 24)
+
+        // 午後6時から見え始める日は、そのぶん右に寄る
+        let cut = day.addingTimeInterval(18 * 3600)
+        let half = m.mid(from: cut, to: day.addingTimeInterval(24 * 3600))
+        XCTAssertEqual(JST.parts(half).hour, 21)
+        XCTAssertEqual(m.visibleHours(from: cut, to: day.addingTimeInterval(24 * 3600)), 6)
+    }
+
+    func test_見えていない日は幅がゼロ() {
+        let day = JST.date(2026, 9, 10)
+        let m = DayMark(dayKey: "2026-09-10", start: day,
+                        end: day.addingTimeInterval(24 * 3600),
+                        high: 29, low: 19, weather: "")
+        let later = day.addingTimeInterval(48 * 3600)
+        XCTAssertEqual(m.visibleHours(from: later, to: later.addingTimeInterval(3600)), 0)
+    }
+
     func test_ECMWFが提供元に入っている() {
         XCTAssertTrue(SourceKey.allCases.contains(.ecmwf))
         XCTAssertEqual(SourceKey.ecmwf.name, "ECMWF")
