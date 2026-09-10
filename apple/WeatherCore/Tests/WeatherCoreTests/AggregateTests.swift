@@ -279,10 +279,19 @@ final class 雨量とグラフの範囲: XCTestCase {
     }
 
     func test_山ごとに別のidになる() {
-        let segs = rain([0, 1, 0, 0, 2, 0])
+        // 山の足元を残すので、0が2つ以上あいて初めて線が切れます
+        let segs = rain([0, 1, 0, 0, 0, 2, 0])
         XCTAssertEqual(segs.count, 2)
+        guard segs.count == 2 else { return }
         XCTAssertNotEqual(segs[0].id, segs[1].id)
         // 色分けは提供元で決めるので、key は同じままです
         XCTAssertEqual(segs[0].key, segs[1].key)
+    }
+
+    func test_0がひとつだけなら線はつながったまま() {
+        // 足元の0が隣り合うため、切りません
+        let segs = rain([0, 1, 0, 2, 0])
+        XCTAssertEqual(segs.count, 1)
+        XCTAssertEqual(segs.first?.points.map(\.value), [0, 1, 0, 2, 0])
     }
 }

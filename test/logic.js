@@ -244,6 +244,12 @@ ctx.loadForecast({ lat: 36.5551, lon: 139.8828 }).then(() => {
   ok('ずっと降らなければ線はない', rain([0, 0, 0, 0]).length === 0);
   ok('ずっと降るなら1本のまま',
      JSON.stringify(rain([1, 2, 3])) === '[[1,2,3]]', JSON.stringify(rain([1, 2, 3])));
+  ok('0がひとつだけなら線はつながったまま',
+     JSON.stringify(rain([0, 1, 0, 2, 0])) === '[[0,1,0,2,0]]',
+     JSON.stringify(rain([0, 1, 0, 2, 0])));
+  ok('0が2つ以上あいたら切れる',
+     JSON.stringify(rain([0, 1, 0, 0, 0, 2, 0])) === '[[0,1,0],[0,2,0]]',
+     JSON.stringify(rain([0, 1, 0, 0, 0, 2, 0])));
 
   console.log('\n' + pass + ' 件確認しました' + (process.exitCode ? '（失敗あり）' : ''));
 });
