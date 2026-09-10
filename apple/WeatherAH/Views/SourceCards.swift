@@ -37,7 +37,7 @@ struct SourceCards: View {
                         HStack(alignment: .firstTextBaseline, spacing: 14) {
                             value(Format.number(now.values.temp, 1), "℃")
                             value(Format.number(now.values.rh, 0), "%")
-                            value(Format.number(now.values.vh, 1), "g/m³")
+                            value(Format.number(now.values.mr, 1), "g/kg(DA)")
                         }
                         if let t = now.time {
                             Text("\(Format.dateTime(t)) の値")

@@ -185,14 +185,15 @@ public struct DailyForecast: Equatable, Sendable, Identifiable {
     public var pop: Double?
     public var min: Double?
     public var max: Double?
-    public var vhMin: Double?
-    public var vhMax: Double?
+    /// その日の絶対湿度 [g/kg(DA)]
+    public var ahMin: Double?
+    public var ahMax: Double?
 
     public var id: String { key }
 
     public init(key: String, date: Date, weather: String = "", code: String = "",
                 pop: Double? = nil, min: Double? = nil, max: Double? = nil,
-                vhMin: Double? = nil, vhMax: Double? = nil) {
+                ahMin: Double? = nil, ahMax: Double? = nil) {
         self.key = key
         self.date = date
         self.weather = weather
@@ -200,8 +201,8 @@ public struct DailyForecast: Equatable, Sendable, Identifiable {
         self.pop = pop
         self.min = min
         self.max = max
-        self.vhMin = vhMin
-        self.vhMax = vhMax
+        self.ahMin = ahMin
+        self.ahMax = ahMax
     }
 }
 

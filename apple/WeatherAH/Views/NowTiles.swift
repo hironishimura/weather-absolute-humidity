@@ -18,8 +18,8 @@ struct NowTiles: View {
                      caption: caption("temp", avg))
                 Tile(title: "相対湿度", value: Format.number(avg.rh, 0), unit: "%",
                      caption: caption("rh", avg))
-                Tile(title: "絶対湿度", value: Format.number(avg.vh, 1), unit: "g/m³",
-                     caption: caption("vh", avg), highlighted: true)
+                Tile(title: "絶対湿度", value: Format.number(avg.mr, 1), unit: "g/kg(DA)",
+                     caption: caption("mr", avg), highlighted: true)
             }
             Text("大きな数字は、取れている提供元の平均です。実況と予報が混ざることがあります。")
                 .font(.caption)
@@ -74,7 +74,7 @@ struct SubValues: View {
         let jma = weather.nows[.jma]
         LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 12, alignment: .top)],
                   spacing: 12) {
-            Item("絶対湿度（重量）", Format.number(avg.mr, 1), "g/kg(DA)")
+            Item("絶対湿度（容積）", Format.number(avg.vh, 1), "g/m³")
             Item("露点温度", Format.number(avg.dp, 1), "℃")
             Item("気圧（現地）", Format.number(avg.pressure, 1), "hPa")
             Item("風", Wind.text(direction: jma?.windDirection, speed: jma?.wind), "")

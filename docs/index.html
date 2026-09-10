@@ -7,7 +7,7 @@
 <meta name="color-scheme" content="light dark">
 <meta name="theme-color" content="#101418">
 <title>気温・湿度・絶対湿度 ｜ 現在地の実況と予報</title>
-<meta name="description" content="現在地の気温・相対湿度・絶対湿度（容積／重量）・露点を、気象庁・Yahoo!天気・ウェザーニュースのデータから表示します。">
+<meta name="description" content="現在地の気温・相対湿度・絶対湿度［g/kg(DA)］・露点を、気象庁・Yahoo!天気・ウェザーニュースのデータから表示します。">
 <link rel="stylesheet" href="./assets/app.css?v=6b6b9ac7">
 </head>
 <body>
@@ -75,7 +75,7 @@
     </div>
     <div class="tile tile--accent">
       <p class="tile__label">絶対湿度</p>
-      <p class="tile__value"><span id="v-vh">--</span><span class="tile__unit">g/m³</span></p>
+      <p class="tile__value"><span id="v-ah">--</span><span class="tile__unit">g/kg(DA)</span></p>
       <p class="tile__cap">各社の値の平均</p>
     </div>
   </section>
@@ -85,7 +85,7 @@
   「提供元ごとの値」でご覧ください。実況と予報が混ざることがあります。</p>
 
   <dl class="subs" aria-label="そのほかの値">
-    <div class="sub"><dt>絶対湿度（重量）</dt><dd id="v-mr">--<span>g/kg(DA)</span></dd></div>
+    <div class="sub"><dt>絶対湿度（容積）</dt><dd id="v-vh">--<span>g/m³</span></dd></div>
     <div class="sub"><dt>露点温度</dt><dd id="v-dp">--<span>℃</span></dd></div>
     <div class="sub"><dt>気圧（現地）</dt><dd id="v-pres">--<span>hPa</span></dd></div>
     <div class="sub"><dt>風</dt><dd id="v-wind">--</dd></div>
@@ -112,7 +112,7 @@
         <button type="button" class="seg__btn" data-days="7">7日</button>
       </div>
     </div>
-    <p class="lead">直近1時間の実況と、これからの予報をひとつの時間軸に並べています。縦の点線が現在時刻です。雨量は棒で出しています。</p>
+    <p class="lead">直近1時間の実況と、これからの予報をひとつの時間軸に並べています。縦の点線が現在時刻です。雨量は棒で出しています。気象庁は前1時間の実測、ほかは予報です。Yahoo!天気は3時間ごとの合計で出しているため、1時間あたりに割って並べています。</p>
     <div id="legend" class="legend"></div>
     <details class="colors">
       <summary>色を変える</summary>
@@ -207,8 +207,10 @@
     <div class="notes">
       <div>
         <h3>絶対湿度とは</h3>
-        <p>空気1m³の中に含まれる水蒸気の重さです。同じ提供元・同じ時刻の気温と相対湿度から計算しています。
-        どちらかが欠けている場合は算出しません。</p>
+        <p>乾き空気1kgあたりに含まれる水蒸気の重さ［g/kg(DA)］です。空気線図と同じ量で、
+        暖めても冷やしても値が変わらないため、換気や結露を考えるときに扱いやすい指標です。
+        同じ提供元・同じ時刻の気温と相対湿度から計算しています。どちらかが欠けている場合は算出しません。</p>
+        <p>空気1m³あたりの重さ［g/m³］（容積絶対湿度）も「そのほかの値」に出しています。</p>
       </div>
       <div>
         <h3>値が一致しない理由</h3>
@@ -238,6 +240,6 @@
 
 </main>
 
-<script src="./assets/app.js?v=f903eeba" defer></script>
+<script src="./assets/app.js?v=9380be6e" defer></script>
 </body>
 </html>

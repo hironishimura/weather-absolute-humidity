@@ -62,9 +62,9 @@ public enum Aggregate {
                 day.max = Swift.max(day.max ?? t, t)
                 day.min = Swift.min(day.min ?? t, t)
             }
-            if let v = r.vh {
-                day.vhMax = Swift.max(day.vhMax ?? v, v)
-                day.vhMin = Swift.min(day.vhMin ?? v, v)
+            if let v = r.mr {
+                day.ahMax = Swift.max(day.ahMax ?? v, v)
+                day.ahMin = Swift.min(day.ahMin ?? v, v)
             }
             if let p = r.pop {
                 day.pop = Swift.max(day.pop ?? p, p)

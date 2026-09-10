@@ -243,7 +243,8 @@ public final class WeatherStore {
                     return ChartPoint(time: row.time, value: v)
                 }
             if !points.isEmpty {
-                out.append(ChartSeries(key: key, points: points))
+                out.append(ChartSeries(key: key, points: field == .precip
+                                       ? ChartField.perHour(points) : points))
             }
         }
         return out
@@ -265,7 +266,7 @@ public enum ChartWindow {
 }
 
 public enum ChartField: String, CaseIterable, Sendable, Identifiable {
-    case temp, rh, vh, pop, precip
+    case temp, rh, ah, pop, precip
 
     public var id: String { rawValue }
 
@@ -273,7 +274,7 @@ public enum ChartField: String, CaseIterable, Sendable, Identifiable {
         switch self {
         case .temp: return "気温"
         case .rh: return "相対湿度"
-        case .vh: return "絶対湿度"
+        case .ah: return "絶対湿度"
         case .pop: return "降水確率"
         case .precip: return "雨量"
         }
@@ -282,14 +283,14 @@ public enum ChartField: String, CaseIterable, Sendable, Identifiable {
         switch self {
         case .temp: return "℃"
         case .rh: return "%"
-        case .vh: return "g/m³"
+        case .ah: return "g/kg(DA)"
         case .pop: return "%"
         case .precip: return "mm/h"
         }
     }
     public var digits: Int {
         switch self {
-        case .temp, .vh, .precip: return 1
+        case .temp, .ah, .precip: return 1
         case .rh, .pop: return 0
         }
     }
@@ -299,11 +300,26 @@ public enum ChartField: String, CaseIterable, Sendable, Identifiable {
     /// 0を下回らない項目
     public var startsAtZero: Bool { self == .pop || self == .precip }
 
+    /// 雨量を1時間あたりに直します。
+    /// Yahoo!天気は3時間ごとの合計で出しているため、そのまま並べると3倍に見えます。
+    static func perHour(_ points: [ChartPoint]) -> [ChartPoint] {
+        guard points.count > 1 else { return points }
+        var gaps: [Double] = []
+        for i in 1..<points.count {
+            gaps.append(points[i].time.timeIntervalSince(points[i - 1].time) / 3600)
+        }
+        gaps.sort()
+        let step = gaps[gaps.count / 2]
+        guard step > 1.01 else { return points }
+        return points.map { ChartPoint(time: $0.time, value: $0.value / step) }
+    }
+
     func value(_ row: HourlyRow) -> Double? {
         switch self {
         case .temp: return row.temp
         case .rh: return row.rh
-        case .vh: return row.vh
+        // 絶対湿度は重量絶対湿度［g/kg(DA)］。空気線図と同じ量です
+        case .ah: return row.mr
         case .pop: return row.pop
         case .precip: return row.precip
         }

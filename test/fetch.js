@@ -1,4 +1,4 @@
-/* 取得処理（アメダス実況・過去24時間・数値予報・取り込みファイル）をモックで確かめます */
+/* 取得処理（アメダス実況・直近の過去・数値予報・取り込みファイル）をモックで確かめます */
 const fs = require('fs');
 const vm = require('vm');
 const path = require('path');
@@ -51,7 +51,8 @@ const meteo = {
     time: ['2026-09-08T13:00', '2026-09-08T14:00', '2026-09-08T15:00', '2026-09-08T16:00'],
     temperature_2m: [24.1, 24.6, 25.0, null],
     relative_humidity_2m: [68, 66, 63, 60],
-    surface_pressure: [1001.8, 1001.5, 1001.2, 1001.0]
+    surface_pressure: [1001.8, 1001.5, 1001.2, 1001.0],
+    precipitation: [0, 1.2, 3.4, 0]
   }
 };
 /* 降水確率はモデルを指定しない問い合わせで返ってくる */
@@ -105,10 +106,11 @@ ctx.loadAmedas(place).then(function (hit) {
   ok('取得状況が「取得」', ctx.state.status.find(s => s.key === 'jma').ok === true);
   ok('風の表示', ctx.windText(ctx.state.now.jma.row) === '東 2.1 m/s', ctx.windText(ctx.state.now.jma.row));
 
-  console.log('\n■ 過去24時間');
+  console.log('\n■ 直近の過去');
   return ctx.loadAmedasPast(hit.station.code, hit.obsTime);
 }).then(function (rows) {
-  ok('8ブロック分を要求する', requested.filter(u => u.indexOf('/point/') >= 0).length === 8,
+  /* グラフに出す過去は1時間ぶんなので、いまと1つ前の枠だけ取ります */
+  ok('2ブロック分だけ要求する', requested.filter(u => u.indexOf('/point/') >= 0).length === 2,
      requested.filter(u => u.indexOf('/point/') >= 0).length);
   ok('欠測を除いた3点', rows.length === 3, rows.length);
   ok('時刻順', rows[0].time < rows[2].time);
@@ -130,6 +132,13 @@ ctx.loadAmedas(place).then(function (hit) {
      requested.join('\n     '));
   ok('降水確率が予報に入る', f[0].pop === 60 && f[2].pop === 10,
      f.map(r => r.pop).join(','));
+  /* 雨量はモデル指定つきの問い合わせで返ります。頼み忘れると
+     雨量のグラフがまるごと消えるので、頼んでいるかを見ます */
+  ok('雨量もモデル指定つきで要求する',
+     requested.some(u => u.indexOf('models=jma_seamless') >= 0 && u.indexOf('precipitation,') >= 0
+                      || u.indexOf('models=jma_seamless') >= 0 && /hourly=[^&]*,precipitation(&|$)/.test(u)),
+     requested.join('\n     '));
+  ok('雨量が予報に入る', f[2].precip === 3.4, f.map(r => r.precip).join(','));
 
   console.log('\n■ 取り込みファイル');
   return ctx.loadSnapshot();

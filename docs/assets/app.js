@@ -414,7 +414,8 @@ function loadAmedasPast(stationCode, obsTime) {
   var blockHour = Math.floor(jst.getUTCHours() / 3) * 3;
   var base = Date.UTC(jst.getUTCFullYear(), jst.getUTCMonth(), jst.getUTCDate(), blockHour);
   var jobs = [];
-  for (var i = 7; i >= 0; i--) {
+  /* グラフに出す過去は1時間ぶんなので、いまと1つ前の枠で足ります */
+  for (var i = 1; i >= 0; i--) {
     var b = new Date(base - i * 3 * 3600 * 1000);
     var name = b.getUTCFullYear() + pad2(b.getUTCMonth() + 1) + pad2(b.getUTCDate()) + '_' + pad2(b.getUTCHours());
     jobs.push(
@@ -433,13 +434,17 @@ function loadAmedasPast(stationCode, obsTime) {
         var h = amedasValue(blk[stamp], 'humidity');
         var p = amedasValue(blk[stamp], 'pressure');
         if (!isNum(t) || !isNum(h)) { return; }
-        rows.push({
+        var row = {
           time: d,
           temp: t,
           rh: h,
           vh: volumetricHumidity(t, h),
           mr: mixingRatio(t, h, isNum(p) ? p : undefined)
-        });
+        };
+        /* 前1時間降水量は毎正時のぶんだけ。10分ごとに出すと同じ棒が6本並びます */
+        var mm = amedasValue(blk[stamp], 'precipitation1h');
+        if (isNum(mm) && d.getUTCMinutes() === 0) { row.precip = mm; }
+        rows.push(row);
       });
     });
     rows.sort(function (a, b) { return a.time - b.time; });
@@ -609,7 +614,7 @@ function loadModel(place) {
   function url(withModel) {
     var q = '?latitude=' + place.lat.toFixed(4) +
       '&longitude=' + place.lon.toFixed(4) +
-      '&hourly=temperature_2m,relative_humidity_2m,surface_pressure' +
+      '&hourly=temperature_2m,relative_humidity_2m,surface_pressure,precipitation' +
       '&current=temperature_2m,relative_humidity_2m,surface_pressure' +
       '&timezone=Asia%2FTokyo&forecast_days=10&past_days=1';
     return OPEN_METEO + q + (withModel ? '&models=jma_seamless' : '');
@@ -757,6 +762,7 @@ function loadSnapshot() {
             row.mr = mixingRatio(r.temp, r.humidity, r.pressure);
           }
           if (isNum(r.pop)) { row.pop = r.pop; has = true; }
+          if (isNum(r.precip)) { row.precip = r.precip; has = true; }
           if (has) { rows.push(row); }
         });
         rows.sort(function (a, b) { return a.time - b.time; });
@@ -1005,7 +1011,7 @@ function renderNow() {
   var avg = averageNow();
   if (!avg) {
     $('now-meta').textContent = '値を取得できませんでした';
-    ['v-temp', 'v-rh', 'v-vh', 'v-mr', 'v-dp', 'v-pres', 'v-di', 'v-wind', 'v-prec'].forEach(function (id) {
+    ['v-temp', 'v-rh', 'v-ah', 'v-vh', 'v-dp', 'v-pres', 'v-di', 'v-wind', 'v-prec'].forEach(function (id) {
       $(id).textContent = '--';
     });
     renderDew();
@@ -1014,8 +1020,8 @@ function renderNow() {
   var v = avg.values;
   $('v-temp').textContent = fix(v.temp, 1);
   $('v-rh').textContent = fix(v.rh, 0);
-  $('v-vh').textContent = fix(v.vh, 1);
-  $('v-mr').innerHTML = fix(v.mr, 1) + '<span>g/kg(DA)</span>';
+  $('v-ah').textContent = fix(v.mr, 1);
+  $('v-vh').innerHTML = fix(v.vh, 1) + '<span>g/m³</span>';
   $('v-dp').innerHTML = fix(v.dp, 1) + '<span>℃</span>';
   $('v-pres').innerHTML = fix(v.pressure, 1) + '<span>hPa</span>';
   $('v-di').textContent = fix(v.di, 1);
@@ -1084,7 +1090,7 @@ function renderSources() {
     var v = n.values;
 
     var vals = el('div', 'src__vals');
-    [[fix(v.temp, 1), '℃'], [fix(v.rh, 0), '%'], [fix(v.vh, 1), 'g/m³']].forEach(function (pair) {
+    [[fix(v.temp, 1), '℃'], [fix(v.rh, 0), '%'], [fix(v.mr, 1), 'g/kg(DA)']].forEach(function (pair) {
       var e = el('p', 'src__v', pair[0]);
       e.appendChild(el('span', null, pair[1]));
       vals.appendChild(e);
@@ -1467,7 +1473,7 @@ function renderChart() {
   [
     { title: '気温', unit: '℃', key: 'temp', digits: 1, marks: marks, height: 200, padTop: 28 },
     { title: '相対湿度', unit: '%', key: 'rh', digits: 0 },
-    { title: '絶対湿度', unit: 'g/m³', key: 'vh', digits: 1 },
+    { title: '絶対湿度', unit: 'g/kg(DA)', key: 'mr', digits: 1 },
     { title: '降水確率', unit: '%', key: 'pop', digits: 0, range: [0, 100] },
     { title: '雨量', unit: 'mm/h', key: 'precip', digits: 1, bars: true, fromZero: true }
   ].forEach(function (c) {
@@ -1485,6 +1491,19 @@ function renderChart() {
         if (t0 >= xMin && t0 <= xMax) {
           points = [{ t: t0, v: g.nowPoint[c.key] }];
           single = true;
+        }
+      }
+      /* 雨量は提供元で刻みが違います（Yahoo!天気は3時間ごとの合計）。
+         そのまま並べると3時間ぶんの棒だけ高く見えるので、1時間あたりに直します。 */
+      if (c.key === 'precip' && points.length > 1) {
+        var gaps = [];
+        for (var gi = 1; gi < points.length; gi++) {
+          gaps.push((points[gi].t - points[gi - 1].t) / 3600e3);
+        }
+        gaps.sort(function (a, b) { return a - b; });
+        var step = gaps[Math.floor(gaps.length / 2)];
+        if (step > 1.01) {
+          points = points.map(function (p) { return { t: p.t, v: p.v / step }; });
         }
       }
       return { color: g.color, single: single, points: points };
@@ -1511,16 +1530,16 @@ function dailyFromHourly(rows) {
   rows.forEach(function (r) {
     var k = jstKey(r.time);
     var d = by[k] || (by[k] = {
-      key: k, max: null, min: null, pop: null, vhMax: null, vhMin: null, derived: true
+      key: k, max: null, min: null, pop: null, mrMax: null, mrMin: null, derived: true
     });
     if (isNum(r.temp)) {
       d.max = (d.max === null) ? r.temp : Math.max(d.max, r.temp);
       d.min = (d.min === null) ? r.temp : Math.min(d.min, r.temp);
     }
     if (isNum(r.pop)) { d.pop = (d.pop === null) ? r.pop : Math.max(d.pop, r.pop); }
-    if (isNum(r.vh)) {
-      d.vhMax = (d.vhMax === null) ? r.vh : Math.max(d.vhMax, r.vh);
-      d.vhMin = (d.vhMin === null) ? r.vh : Math.min(d.vhMin, r.vh);
+    if (isNum(r.mr)) {
+      d.mrMax = (d.mrMax === null) ? r.mr : Math.max(d.mrMax, r.mr);
+      d.mrMin = (d.mrMin === null) ? r.mr : Math.min(d.mrMin, r.mr);
     }
   });
   return by;
@@ -1542,7 +1561,7 @@ function fillPops(days, popByDay) {
   Object.keys(popByDay).forEach(function (k) {
     var d = days[k];
     if (!d) {
-      days[k] = { key: k, max: null, min: null, pop: popByDay[k], vhMax: null, vhMin: null, derived: true };
+      days[k] = { key: k, max: null, min: null, pop: popByDay[k], mrMax: null, mrMin: null, derived: true };
     } else if (!isNum(d.pop)) {
       d.pop = popByDay[k];
     }
@@ -1578,7 +1597,7 @@ function buildWeekly() {
         max: isNum(e.max) ? e.max : d.max,
         min: isNum(e.min) ? e.min : d.min,
         pop: isNum(e.pop) ? e.pop : d.pop,
-        vhMax: d.vhMax, vhMin: d.vhMin,
+        mrMax: d.mrMax, mrMin: d.mrMin,
         derived: false
       };
     });
@@ -1616,8 +1635,8 @@ function weeklyCell(key, d) {
   if (t.childNodes.length) { td.appendChild(t); }
 
   if (isNum(d.pop)) { td.appendChild(el('p', 'w-p', '降水 ' + fix(d.pop, 0) + '%')); }
-  if (isNum(d.vhMin) && isNum(d.vhMax)) {
-    td.appendChild(el('p', 'w-vh', '絶対湿度 ' + fix(d.vhMin, 1) + '〜' + fix(d.vhMax, 1) + ' g/m³'));
+  if (isNum(d.mrMin) && isNum(d.mrMax)) {
+    td.appendChild(el('p', 'w-vh', '絶対湿度 ' + fix(d.mrMin, 1) + '〜' + fix(d.mrMax, 1) + ' g/kg(DA)'));
   }
   if (!td.childNodes.length) { td.appendChild(el('span', 'w-none', '—')); }
   return td;

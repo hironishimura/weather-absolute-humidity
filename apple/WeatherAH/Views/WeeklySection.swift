@@ -107,8 +107,8 @@ struct WeeklySection: View {
                     Text("降水 \(Format.number(pop, 0))%")
                         .font(.caption2.monospacedDigit()).foregroundStyle(.secondary)
                 }
-                if let lo = day.vhMin, let hi = day.vhMax {
-                    Text("絶対湿度 \(Format.number(lo, 1))〜\(Format.number(hi, 1)) g/m³")
+                if let lo = day.ahMin, let hi = day.ahMax {
+                    Text("絶対湿度 \(Format.number(lo, 1))〜\(Format.number(hi, 1)) g/kg(DA)")
                         .font(.caption2.monospacedDigit()).foregroundStyle(.secondary)
                 }
             }

@@ -40,8 +40,10 @@ struct StatusSection: View {
 
             VStack(alignment: .leading, spacing: 6) {
                 Text("絶対湿度とは").font(.caption.bold())
-                Text("空気1m³の中に含まれる水蒸気の重さです。同じ提供元・同じ時刻の気温と相対湿度から計算しています。"
-                     + "相対湿度だけでは空気の乾き具合が分かりにくいため、結露やカビ、加湿・除湿の判断に使えます。")
+                Text("乾き空気1kgあたりに含まれる水蒸気の重さ［g/kg(DA)］です。空気線図と同じ量で、"
+                     + "暖めても冷やしても値が変わらないため、換気量や結露を考えるときに扱いやすい指標です。"
+                     + "同じ提供元・同じ時刻の気温と相対湿度から計算しています。"
+                     + "空気1m³あたりの重さ［g/m³］（容積絶対湿度）も「そのほかの値」に出しています。")
                     .font(.caption2).foregroundStyle(.secondary)
                 Text("表示する値は目安です。設計や気密測定の判断に使うときは実測値と照らし合わせてください。")
                     .font(.caption2).foregroundStyle(.secondary)

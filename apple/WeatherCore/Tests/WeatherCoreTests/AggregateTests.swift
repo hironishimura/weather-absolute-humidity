@@ -58,9 +58,9 @@ final class 日ごとにまとめる: XCTestCase {
 
     func test_絶対湿度の幅も出る() {
         let d = Aggregate.daily(fromHourly: rows)["2026-09-09"]
-        XCTAssertNotNil(d?.vhMin)
-        XCTAssertNotNil(d?.vhMax)
-        XCTAssertLessThan(d!.vhMin!, d!.vhMax!)
+        XCTAssertNotNil(d?.ahMin)
+        XCTAssertNotNil(d?.ahMax)
+        XCTAssertLessThan(d!.ahMin!, d!.ahMax!)
     }
 
     func test_時間帯の降水確率を日ごとに直す() {
@@ -108,7 +108,7 @@ final class 日ごとにまとめる: XCTestCase {
         let day = table[.yahoo]?["2026-09-09"]
         XCTAssertEqual(day?.weather, "雨")
         XCTAssertEqual(day?.max, 25)          // 週間表の値
-        XCTAssertNotNil(day?.vhMax)           // 時間ごとから出した絶対湿度は残る
+        XCTAssertNotNil(day?.ahMax)           // 時間ごとから出した絶対湿度は残る
     }
 
     func test_降水確率の階段() {
@@ -214,5 +214,35 @@ final class 雨量とグラフの範囲: XCTestCase {
         XCTAssertTrue([1, 2, 3, 6, 12, 24].contains(
             AxisTicks.hours(span: ChartWindow.span(days: 1), usable: 1006).step))
         XCTAssertEqual(AxisTicks.hours(span: ChartWindow.span(days: 7), usable: 1006).step, 24)
+    }
+
+    func test_絶対湿度は重量で出す() {
+        XCTAssertEqual(ChartField.ah.title, "絶対湿度")
+        XCTAssertEqual(ChartField.ah.unit, "g/kg(DA)")
+        // 22℃70% なら 12前後（g/m³ なら14前後）。取り違えるとここで落ちます
+        let row = HourlyRow.make(time: JST.date(2026, 9, 10, 3), temp: 22, rh: 70)!
+        let v = ChartField.ah.value(row)!
+        XCTAssertEqual(v, 11.6, accuracy: 0.6)
+        XCTAssertNotEqual(v, row.vh!, accuracy: 0.5)
+    }
+
+    func test_3時間ごとの雨量は1時間あたりに直す() {
+        // Yahoo!天気は3時間ぶんの合計で出しています
+        let pts = [0, 3, 6, 9].map {
+            ChartPoint(time: JST.date(2026, 9, 10, $0), value: 6)
+        }
+        let per = ChartField.perHour(pts)
+        XCTAssertEqual(per.map(\.value), [2, 2, 2, 2])
+        XCTAssertEqual(per.map(\.time), pts.map(\.time))
+    }
+
+    func test_1時間ごとの雨量はそのまま() {
+        let pts = [0, 1, 2].map { ChartPoint(time: JST.date(2026, 9, 10, $0), value: 4) }
+        XCTAssertEqual(ChartField.perHour(pts).map(\.value), [4, 4, 4])
+    }
+
+    func test_点がひとつなら割らない() {
+        let pts = [ChartPoint(time: JST.date(2026, 9, 10, 0), value: 6)]
+        XCTAssertEqual(ChartField.perHour(pts).map(\.value), [6])
     }
 }
