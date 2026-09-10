@@ -177,6 +177,19 @@ public final class SettingsStore {
         save(v)
     }
 
+    /// 現在地を入れ替えます。すでにあれば位置だけ差し替え、なければ先頭に足します。
+    public func setHere(lat: Double, lon: Double, label: String = "現在地") {
+        var v = data
+        let here = Place(id: Place.hereID, label: label, lat: lat, lon: lon)
+        if let i = v.places.firstIndex(where: { $0.id == Place.hereID }) {
+            v.places[i] = here
+        } else {
+            v.places.insert(here, at: 0)
+        }
+        v.activeID = Place.hereID
+        save(v)
+    }
+
     public func update(_ place: Place) {
         var v = data
         guard let i = v.places.firstIndex(where: { $0.id == place.id }) else { return }

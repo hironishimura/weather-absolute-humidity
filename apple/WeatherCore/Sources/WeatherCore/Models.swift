@@ -86,6 +86,12 @@ public struct Place: Identifiable, Codable, Equatable, Sendable {
         self.office = office
     }
 
+    /// 現在地の地点はひとつだけ持ち、押すたびに位置を入れ替えます。
+    /// 決め打ちのidにしておくと、保存済みの形を変えずに見分けられます。
+    public static let hereID = "here"
+
+    public var isHere: Bool { id == Place.hereID }
+
     public static func newID() -> String {
         "p" + String(Int(Date().timeIntervalSince1970 * 1000), radix: 36)
             + String(Int.random(in: 0..<1296), radix: 36)
