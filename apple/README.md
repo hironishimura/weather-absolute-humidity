@@ -60,6 +60,45 @@ Apple ID を Xcode に入れていないときは
   （はじめて入れたときは、端末側で
   **設定 → 一般 → VPNとデバイス管理** から自分の Apple ID を「信頼」してください）
 
+## Mac に置いて、Xcode なしで使う
+
+Xcode の ▶ で作られるのは動作確認用（Debug）です。手元で常用するなら
+Release で書き出して、アプリケーションフォルダに置くほうが軽くて速いです。
+
+```
+xattr -cr ~/Documents/weather-absolute-humidity
+
+cd ~/Documents/weather-absolute-humidity/apple
+rm -rf build
+xcodebuild -project WeatherAH.xcodeproj -scheme WeatherAH \
+  -configuration Release -destination 'platform=macOS' \
+  -derivedDataPath /tmp/weatherah-build -quiet build \
+  && echo "=== ビルド成功 ===" || echo "=== ビルド失敗 ==="
+```
+
+「ビルド成功」を確かめてから、置きます。
+
+```
+mkdir -p ~/Applications
+rm -rf ~/Applications/気温湿度.app
+cp -R /tmp/weatherah-build/Build/Products/Release/気温湿度.app ~/Applications/
+xattr -cr ~/Applications/気温湿度.app
+open ~/Applications
+```
+
+### なぜ `xattr -cr` と `/tmp` なのか
+
+**`xattr -cr`** … ファイルに拡張属性（Finder が付ける見えない付加情報）が
+付いていると、コード署名が
+`resource fork, Finder information, or similar detritus not allowed`
+と言って止まります。`~/Documents` は iCloud Drive の同期対象になっている
+ことが多く、同期の過程でこの属性が付きます。消してから作ります。
+
+**`/tmp` に作る** … ビルドの中間ファイルは大きいので、iCloud に同期される
+場所に置きたくありません。同じ理由で、上の属性も付きにくくなります。
+
+更新したくなったら、同じ手順をもう一度実行すれば置き換わります。
+
 ## iCloud 同期を入れる
 
 **Apple Developer Program に入っている場合だけ**できます。
