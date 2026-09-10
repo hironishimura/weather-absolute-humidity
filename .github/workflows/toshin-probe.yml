@@ -14,3 +14,16 @@ jobs:
         with: { python-version: '3.12' }
       - name: 下調べ
         run: python3 scripts/probe_toshin.py
+      - name: 403 の正体を調べる
+        run: python3 scripts/probe_toshin2.py
+      - name: curl でも試す
+        run: |
+          echo '--- curl（ブラウザ風の見た目） ---'
+          curl -sS -o /dev/null -w 'HTTP %{http_code}  %{size_download} bytes\n' \
+            -H 'User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36' \
+            'https://www.toshin.com/weather/city?pref=%E6%A0%83%E6%9C%A8%E7%9C%8C' || true
+      - name: 本物のブラウザなら通るか
+        run: |
+          pip install playwright >/dev/null 2>&1
+          python3 -m playwright install --with-deps chromium >/dev/null 2>&1
+          python3 scripts/probe_toshin3.py || true
