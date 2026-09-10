@@ -1,3 +1,9 @@
 __pycache__/
 *.pyc
 .DS_Store
+
+# Xcode の作業ファイル
+apple/build/
+*.xcuserdatad
+xcuserdata/
+DerivedData/
