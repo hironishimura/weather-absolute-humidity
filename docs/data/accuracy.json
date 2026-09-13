@@ -1,5 +1,5 @@
 {
-  "updated_at": "2026-09-13T20:40:20.153700+09:00",
+  "updated_at": "2026-09-14T01:08:29.087670+09:00",
   "rain_mm": 1.0,
   "say_rain": 50.0,
   "places": [
@@ -21,26 +21,14 @@
         },
         {
           "start": "2026-09-10T00:00:00+09:00",
-          "hours": 12,
-          "mm": 2.0,
+          "hours": 24,
+          "mm": 3.0,
           "rain": true,
           "pops": {
             "jma": 60.0,
             "model": 100.0,
             "yahoo": 60.0,
             "weathernews": 90.0
-          }
-        },
-        {
-          "start": "2026-09-10T12:00:00+09:00",
-          "hours": 12,
-          "mm": 1.0,
-          "rain": true,
-          "pops": {
-            "jma": 30.0,
-            "model": 18.0,
-            "yahoo": 50.0,
-            "weathernews": 40.0
           }
         },
         {
@@ -102,32 +90,44 @@
             "yahoo": 30.0,
             "weathernews": 40.0
           }
+        },
+        {
+          "start": "2026-09-13T12:00:00+09:00",
+          "hours": 12,
+          "mm": 0.0,
+          "rain": false,
+          "pops": {
+            "jma": 40.0,
+            "model": 16.0,
+            "yahoo": 30.0,
+            "weathernews": 40.0
+          }
         }
       ],
       "scores": {
         "jma": {
           "n": 7,
-          "hit": 5,
-          "rate": 71.4,
-          "brier": 0.259
+          "hit": 6,
+          "rate": 85.7,
+          "brier": 0.211
         },
         "model": {
           "n": 8,
-          "hit": 6,
-          "rate": 75.0,
-          "brier": 0.221
+          "hit": 7,
+          "rate": 87.5,
+          "brier": 0.14
         },
         "yahoo": {
           "n": 7,
           "hit": 5,
           "rate": 71.4,
-          "brier": 0.2
+          "brier": 0.177
         },
         "weathernews": {
           "n": 7,
-          "hit": 5,
-          "rate": 71.4,
-          "brier": 0.239
+          "hit": 6,
+          "rate": 85.7,
+          "brier": 0.21
         }
       }
     }
@@ -167,6 +167,14 @@
         "rain": false
       },
       "2026-09-13T00:00:00+09:00|12": {
+        "mm": 0.0,
+        "rain": false
+      },
+      "2026-09-10T00:00:00+09:00|24": {
+        "mm": 3.0,
+        "rain": true
+      },
+      "2026-09-13T12:00:00+09:00|12": {
         "mm": 0.0,
         "rain": false
       }
