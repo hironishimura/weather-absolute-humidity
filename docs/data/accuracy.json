@@ -1,5 +1,5 @@
 {
-  "updated_at": "2026-09-14T08:05:46.625036+09:00",
+  "updated_at": "2026-09-14T13:44:05.246294+09:00",
   "rain_mm": 1.0,
   "say_rain": 50.0,
   "places": [
@@ -102,32 +102,44 @@
             "yahoo": 30.0,
             "weathernews": 40.0
           }
+        },
+        {
+          "start": "2026-09-14T00:00:00+09:00",
+          "hours": 12,
+          "mm": 0.0,
+          "rain": false,
+          "pops": {
+            "jma": 40.0,
+            "model": 2.0,
+            "yahoo": 30.0,
+            "weathernews": 40.0
+          }
         }
       ],
       "scores": {
         "jma": {
-          "n": 7,
-          "hit": 6,
-          "rate": 85.7,
-          "brier": 0.211
-        },
-        "model": {
           "n": 8,
           "hit": 7,
           "rate": 87.5,
-          "brier": 0.14
+          "brier": 0.205
+        },
+        "model": {
+          "n": 9,
+          "hit": 8,
+          "rate": 88.9,
+          "brier": 0.124
         },
         "yahoo": {
-          "n": 7,
-          "hit": 5,
-          "rate": 71.4,
-          "brier": 0.177
+          "n": 8,
+          "hit": 6,
+          "rate": 75.0,
+          "brier": 0.166
         },
         "weathernews": {
-          "n": 7,
-          "hit": 6,
-          "rate": 85.7,
-          "brier": 0.21
+          "n": 8,
+          "hit": 7,
+          "rate": 87.5,
+          "brier": 0.204
         }
       }
     }
@@ -175,6 +187,10 @@
         "rain": true
       },
       "2026-09-13T12:00:00+09:00|12": {
+        "mm": 0.0,
+        "rain": false
+      },
+      "2026-09-14T00:00:00+09:00|12": {
         "mm": 0.0,
         "rain": false
       }
