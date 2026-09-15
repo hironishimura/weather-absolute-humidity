@@ -251,5 +251,30 @@ ctx.loadForecast({ lat: 36.5551, lon: 139.8828 }).then(() => {
      JSON.stringify(rain([0, 1, 0, 0, 0, 2, 0])) === '[[0,1,0],[0,2,0]]',
      JSON.stringify(rain([0, 1, 0, 0, 0, 2, 0])));
 
+  console.log('\n■ 地名から緯度経度');
+  const feat = (title, lat, lon) => ({ properties: { title: title },
+                                       geometry: { coordinates: [lon, lat] } });
+  ok('空白を落とす', ctx.geoNormalize(' 栃木県 　宇都宮市 ') === '栃木県宇都宮市',
+     ctx.geoNormalize(' 栃木県 　宇都宮市 '));
+  /* 「東京駅」で北海道が並んだ実例。字が入っていないものは落とす */
+  const tokyo = ctx.gsiCandidates([
+    feat('北海道札幌市東区', 43.076111, 141.363617),
+    feat('北海道東神楽町東', 43.681801, 142.432129),
+    feat('東京駅', 35.681259, 139.766217)
+  ], '東京駅');
+  ok('字が入っていないものを落とす', tokyo.length === 1, tokyo.length);
+  ok('残ったものの緯度経度', Math.abs(tokyo[0].lat - 35.681259) < 1e-6
+     && Math.abs(tokyo[0].lon - 139.766217) < 1e-6);
+  ok('緯度と経度を取り違えない', tokyo[0].lat < tokyo[0].lon);
+  ok('住所はそのまま残る',
+     ctx.gsiCandidates([feat('栃木県宇都宮市平出町', 36.57386, 139.945251)],
+                       '宇都宮市平出町').length === 1);
+  ok('多すぎるときは8件まで',
+     ctx.gsiCandidates(Array.from({ length: 20 }, () => feat('鹿沼市', 36.5, 139.7)),
+                       '鹿沼市').length === 8);
+  ok('中身が空でも落ちない', ctx.gsiCandidates(null, '鹿沼市').length === 0);
+  ok('座標のないものは捨てる',
+     ctx.gsiCandidates([{ properties: { title: '鹿沼市' } }], '鹿沼市').length === 0);
+
   console.log('\n' + pass + ' 件確認しました' + (process.exitCode ? '（失敗あり）' : ''));
 });

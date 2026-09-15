@@ -88,6 +88,10 @@ struct PlaceEditor: View {
     @State private var locateError: String?
     @State private var locator = Locator()
 
+    @State private var searching = false
+    @State private var candidates: [GeoCandidate] = []
+    @State private var geoMessage: String?
+
     private let isNew: Bool
 
     init(place: Place, isNew: Bool) {
@@ -98,8 +102,34 @@ struct PlaceEditor: View {
     var body: some View {
         NavigationStack {
             Form {
-                Section("名前") {
-                    TextField("宇都宮 事務所", text: $draft.label)
+                Section("地名") {
+                    TextField("栃木県宇都宮市平出町", text: $draft.label)
+                        .onSubmit { Task { await lookUp() } }
+                    Button {
+                        Task { await lookUp() }
+                    } label: {
+                        Label(searching ? "探しています…" : "地名から緯度経度を入れる",
+                              systemImage: "magnifyingglass")
+                    }
+                    .disabled(searching || Geocoder.normalize(draft.label).isEmpty)
+
+                    if let geoMessage {
+                        Text(geoMessage).font(.caption).foregroundStyle(.secondary)
+                    }
+                    // 候補は選ばせます。黙って先頭を入れると、
+                    // 「東京駅」で北海道の座標が静かに入るような事故が起きます。
+                    ForEach(candidates) { c in
+                        Button {
+                            fill(with: c)
+                        } label: {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(c.title)
+                                Text(String(format: "%.4f° N, %.4f° E", c.lat, c.lon))
+                                    .font(.caption2).foregroundStyle(.secondary)
+                            }
+                        }
+                        .buttonStyle(.plain)
+                    }
                 }
                 Section("場所") {
                     LabeledContent("緯度") {
@@ -128,7 +158,9 @@ struct PlaceEditor: View {
                     }
                 }
                 Section {
-                    Text("緯度・経度は地図アプリで長押しすると出てきます。"
+                    Text("地名は住所のほうがよく見つかります（駅や施設の名前でも引けることがあります）。"
+                         + "出どころは国土地理院の住所検索です。"
+                         + "緯度・経度は地図アプリで長押しすると出てきます。"
                          + "気象庁と数値予報は、どこを入れてもそのまま動きます。"
                          + "Yahoo!天気とウェザーニュースは取り込み地点から40km以内のときだけ出ます。")
                         .font(.caption).foregroundStyle(.secondary)
@@ -166,6 +198,39 @@ struct PlaceEditor: View {
         #if os(macOS)
         .frame(minWidth: 420, minHeight: 380)
         #endif
+    }
+
+    /// 地名から緯度経度を引きます。
+    /// 押されたときだけ問い合わせます（1文字ごとに投げると相手に負担がかかります）。
+    private func lookUp() async {
+        let q = draft.label
+        guard !Geocoder.normalize(q).isEmpty, !searching else { return }
+        searching = true
+        candidates = []
+        geoMessage = "探しています…"
+        defer { searching = false }
+
+        let hits = await Geocoder().search(q)
+        if hits.isEmpty {
+            geoMessage = "見つかりませんでした。住所で入れるか、緯度・経度を直接入れてください"
+            return
+        }
+        if hits.count == 1 {
+            fill(with: hits[0])
+            return
+        }
+        candidates = hits
+        geoMessage = "\(hits.count)件見つかりました。選んでください"
+    }
+
+    private func fill(with c: GeoCandidate) {
+        draft.label = c.title
+        draft.lat = (c.lat * 10000).rounded() / 10000
+        draft.lon = (c.lon * 10000).rounded() / 10000
+        // 場所が変わったので、予報区は選び直させます
+        draft.office = nil
+        candidates = []
+        geoMessage = "入れました：\(c.title)"
     }
 
     private func useCurrentLocation() async {

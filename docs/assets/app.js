@@ -222,6 +222,70 @@ function getJSON(url, opt) {
     .catch(function (e) { if (timer) { clearTimeout(timer); } throw e; });
 }
 
+/* ---------------------------------------------------------
+   地名から緯度経度を引く
+   ---------------------------------------------------------
+   まず国土地理院の住所検索にあたります。日本の町名まで引けるためです。
+   返ってこない／見つからないときだけ Open-Meteo の地名検索に回ります。
+   こちらは市までしか引けませんが、控えとしては十分です。
+   アプリ版（WeatherCore/Geocode.swift）と同じ順番・同じ絞り込みです。
+   --------------------------------------------------------- */
+var GSI_SEARCH = 'https://msearch.gsi.go.jp/address-search/AddressSearch?q=';
+var OM_GEOCODE = 'https://geocoding-api.open-meteo.com/v1/search';
+var GEO_LIMIT = 8;
+
+/* 空白を落とす。全角の空白も */
+function geoNormalize(s) {
+  return String(s == null ? '' : s).replace(/[\s\u3000]+/g, '');
+}
+
+/* 問い合わせた字が住所に入っているものだけ残す。
+   残さないと「東京駅」で北海道の地名が並びます（実際にそうなりました）。 */
+function gsiCandidates(list, q) {
+  var out = [];
+  (list || []).forEach(function (f) {
+    if (out.length >= GEO_LIMIT) { return; }
+    var title = f && f.properties && f.properties.title;
+    var c = f && f.geometry && f.geometry.coordinates;
+    if (!title || !c || c.length < 2) { return; }
+    if (geoNormalize(title).indexOf(q) < 0) { return; }
+    out.push({ title: title, lat: c[1], lon: c[0] });
+  });
+  return out;
+}
+
+function openMeteoCandidates(d) {
+  var out = [];
+  ((d && d.results) || []).forEach(function (r) {
+    if (!isNum(r.latitude) || !isNum(r.longitude) || !r.name) { return; }
+    out.push({ title: (r.admin1 || '') + r.name, lat: r.latitude, lon: r.longitude });
+  });
+  return out;
+}
+
+function geocode(query) {
+  var q = geoNormalize(query);
+  if (!q) { return Promise.resolve([]); }
+
+  function gsi() {
+    return getJSON(GSI_SEARCH + encodeURIComponent(q), { timeout: 15000 })
+      .then(function (list) { return gsiCandidates(list, q); });
+  }
+
+  /* 国土地理院は応答が遅いことがあるので、いちどだけ取り直します */
+  return gsi()
+    .catch(function () { return gsi(); })
+    .catch(function () { return []; })
+    .then(function (hits) {
+      if (hits.length) { return hits; }
+      return getJSON(OM_GEOCODE + '?name=' + encodeURIComponent(q)
+                     + '&count=' + GEO_LIMIT + '&language=ja&format=json',
+                     { timeout: 12000 })
+        .then(openMeteoCandidates)
+        .catch(function () { return []; });
+    });
+}
+
 /* 2地点の距離 [km] */
 function distanceKm(lat1, lon1, lat2, lon2) {
   var R = 6371;
@@ -1875,6 +1939,9 @@ function renderChips() {
 function fillForm() {
   var p = activePlace();
   if (!p) { return; }
+  /* 別の地点に移ったら、前の候補は消します */
+  clearGeoList();
+  showGeoMessage('');
   $('in-name').value = p.name || '';
   $('in-lat').value = isNum(p.lat) ? p.lat.toFixed(4) : '';
   $('in-lon').value = isNum(p.lon) ? p.lon.toFixed(4) : '';
@@ -1998,6 +2065,65 @@ function askLocation(onOk) {
   );
 }
 
+/* 地名から緯度経度を引いて、候補を出す */
+function showGeoMessage(text) {
+  $('geo-msg').textContent = text || '';
+}
+
+function clearGeoList() {
+  var box = $('geo-list');
+  box.innerHTML = '';
+  box.hidden = true;
+}
+
+function fillFromCandidate(c) {
+  $('in-name').value = c.title;
+  $('in-lat').value = c.lat.toFixed(4);
+  $('in-lon').value = c.lon.toFixed(4);
+  /* 場所が変わったので、予報区は選び直させます */
+  $('in-office').value = '';
+  clearGeoList();
+  showGeoMessage('入れました：' + c.title);
+}
+
+function runGeocode() {
+  var q = ($('in-name').value || '').trim();
+  clearGeoList();
+  if (!q) { showGeoMessage('地名を入れてください'); return; }
+
+  var btn = $('btn-geocode');
+  btn.disabled = true;
+  showGeoMessage('探しています…');
+
+  geocode(q).then(function (hits) {
+    btn.disabled = false;
+    if (!hits.length) {
+      showGeoMessage('見つかりませんでした。住所で入れるか、緯度・経度を直接入れてください');
+      return;
+    }
+    /* ひとつだけなら選ぶ手間を省きます */
+    if (hits.length === 1) { fillFromCandidate(hits[0]); return; }
+
+    showGeoMessage(hits.length + '件見つかりました。選んでください');
+    var box = $('geo-list');
+    hits.forEach(function (c) {
+      var li = el('li');
+      var b = document.createElement('button');
+      b.type = 'button';
+      b.appendChild(document.createTextNode(c.title));
+      b.appendChild(el('span', 'geo__ll',
+        c.lat.toFixed(4) + '° N, ' + c.lon.toFixed(4) + '° E'));
+      b.addEventListener('click', function () { fillFromCandidate(c); });
+      li.appendChild(b);
+      box.appendChild(li);
+    });
+    box.hidden = false;
+  }).catch(function () {
+    btn.disabled = false;
+    showGeoMessage('探せませんでした。緯度・経度を直接入れてください');
+  });
+}
+
 /* ヘッダーの「現在地」。現在地の地点はひとつだけ持ち、位置を入れ替えます */
 function locate() {
   $('btn-locate').disabled = true;
@@ -2047,6 +2173,14 @@ function init() {
     state.places.push(p);
     state.activeId = p.id;
     useActive();
+  });
+
+  $('btn-geocode').addEventListener('click', function () {
+    runGeocode();
+  });
+  /* 地名の欄で Enter を押しても引けるようにします */
+  $('in-name').addEventListener('keydown', function (e) {
+    if (e.key === 'Enter') { e.preventDefault(); runGeocode(); }
   });
 
   $('btn-here').addEventListener('click', function () {

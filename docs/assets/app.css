@@ -328,3 +328,15 @@ table{ border-collapse:collapse; width:100%; font-size:.8125rem; }
 .foot{ font-size:.75rem; color:var(--text-mute); line-height:1.9; padding:0 4px; }
 .foot p+p{ margin-top:6px; }
 .foot__note{ opacity:.85; }
+
+/* ---------- 地名から緯度経度を引く ---------- */
+.geo{ display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+.geo__msg{ font-size:.8rem; color:var(--text-mute); }
+.geo__list{ flex:1 1 100%; list-style:none; margin:0; padding:0;
+  border:1px solid var(--line); border-radius:10px; overflow:hidden; }
+.geo__list li{ border-top:1px solid var(--line); }
+.geo__list li:first-child{ border-top:none; }
+.geo__list button{ display:block; width:100%; text-align:left; padding:9px 12px;
+  background:none; border:none; font:inherit; color:inherit; cursor:pointer; }
+.geo__list button:hover{ background:var(--hover, rgba(127,127,127,.12)); }
+.geo__list .geo__ll{ display:block; font-size:.75rem; color:var(--text-mute); }

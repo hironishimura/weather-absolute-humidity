@@ -8,7 +8,7 @@
 <meta name="theme-color" content="#101418">
 <title>気温・湿度・絶対湿度 ｜ 現在地の実況と予報</title>
 <meta name="description" content="現在地の気温・相対湿度・絶対湿度［g/kg(DA)］・露点を、気象庁・Yahoo!天気・ウェザーニュースのデータから表示します。">
-<link rel="stylesheet" href="./assets/app.css?v=7de28a79">
+<link rel="stylesheet" href="./assets/app.css?v=6d43cd33">
 </head>
 <body>
 
@@ -41,8 +41,14 @@
     <details class="place__edit" id="place-edit">
       <summary>地点を追加・編集する</summary>
       <div class="place__form">
-        <label class="field field--wide"><span>名前</span>
-          <input type="text" id="in-name" maxlength="24" placeholder="宇都宮 事務所"></label>
+        <label class="field field--wide"><span>地名</span>
+          <input type="text" id="in-name" maxlength="40" placeholder="栃木県宇都宮市平出町"
+                 autocomplete="off"></label>
+        <div class="field field--wide geo">
+          <button type="button" id="btn-geocode" class="btn btn--ghost">地名から緯度経度を入れる</button>
+          <span id="geo-msg" class="geo__msg"></span>
+        </div>
+        <ul class="geo__list" id="geo-list" hidden></ul>
         <label class="field"><span>緯度</span>
           <input type="number" id="in-lat" step="0.0001" inputmode="decimal" placeholder="36.5551"></label>
         <label class="field"><span>経度</span>
@@ -55,7 +61,10 @@
           <button type="button" id="btn-here" class="btn btn--ghost">現在地を入れる</button>
           <button type="button" id="btn-delete" class="btn btn--danger">この地点を削除</button>
         </div>
-        <p class="note">緯度・経度は小数（度）で入れてください。地図アプリで長押しすると出てきます。
+        <p class="note">地名を入れて「地名から緯度経度を入れる」を押すと、候補から選べます
+        （住所のほうがよく見つかります。駅や施設の名前でも引けることがあります）。
+        出どころは国土地理院の住所検索です。
+        緯度・経度は小数（度）で直接入れてもかまいません。地図アプリで長押しすると出てきます。
         予報区を「自動」にすると緯度・経度から選びます。登録した地点はこの端末のブラウザに保存されます。</p>
       </div>
     </details>
@@ -241,6 +250,6 @@
 
 </main>
 
-<script src="./assets/app.js?v=7737d564" defer></script>
+<script src="./assets/app.js?v=57a2121a" defer></script>
 </body>
 </html>
