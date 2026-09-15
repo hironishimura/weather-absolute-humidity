@@ -276,5 +276,57 @@ ctx.loadForecast({ lat: 36.5551, lon: 139.8828 }).then(() => {
   ok('座標のないものは捨てる',
      ctx.gsiCandidates([{ properties: { title: '鹿沼市' } }], '鹿沼市').length === 0);
 
+  console.log('\n■ 気象庁の気温予報の線');
+  /* 窓の外の点は、ふちで切って値をまっすぐ結び直す */
+  const cl = ctx.clipSeries([{ t: 0, v: 10 }, { t: 100, v: 20 }], 50, 200);
+  ok('左のふちで切る', cl.length === 2 && cl[0].t === 50 && near(cl[0].v, 15, 1e-9),
+     JSON.stringify(cl));
+  const cr = ctx.clipSeries([{ t: 0, v: 10 }, { t: 100, v: 20 }], -50, 50);
+  ok('右のふちで切る', cr.length === 2 && cr[1].t === 50 && near(cr[1].v, 15, 1e-9),
+     JSON.stringify(cr));
+  const cb = ctx.clipSeries([{ t: 0, v: 0 }, { t: 100, v: 100 }], 20, 80);
+  ok('両方のふちで切る',
+     cb.length === 2 && cb[0].t === 20 && cb[1].t === 80
+     && near(cb[0].v, 20, 1e-9) && near(cb[1].v, 80, 1e-9), JSON.stringify(cb));
+  ok('ふちに乗った点は重ならない',
+     ctx.clipSeries([{ t: 0, v: 1 }, { t: 50, v: 2 }, { t: 100, v: 3 }], 50, 100).length === 2);
+  ok('全部そとなら空', ctx.clipSeries([{ t: 0, v: 1 }, { t: 10, v: 2 }], 50, 100).length === 0);
+  ok('全部なかならそのまま',
+     ctx.clipSeries([{ t: 60, v: 1 }, { t: 70, v: 2 }], 50, 100).length === 2);
+
+  /* 日ごとの最低・最高が、朝と昼すぎに置かれて1本につながること */
+  const day0 = new Date('2026-09-15T00:00:00+09:00').getTime();
+  const saved = { daily: ctx.state.daily, future: ctx.state.future,
+                  weekly: ctx.state.weekly, pops: ctx.state.pops,
+                  popBlocks: ctx.state.popBlocks };
+  ctx.state.daily = [0, 1, 2].map(function (i) {
+    return { date: new Date(day0 + i * 24 * 3600e3), weather: 'はれ',
+             min: 18 + i, max: 28 + i, pop: null, code: '100' };
+  });
+  ctx.state.future = {}; ctx.state.weekly = {}; ctx.state.pops = []; ctx.state.popBlocks = {};
+  const curve = ctx.jmaTempCurve(day0, day0 + 3 * 24 * 3600e3);
+  ok('3日ぶんで6点になる', curve.length === 6, curve.length);
+  ok('最低が先、最高があと',
+     curve[0].v === 18 && curve[1].v === 28 && curve[2].v === 19 && curve[3].v === 29,
+     JSON.stringify(curve.map(function (p) { return p.v; })));
+  ok('最低は5時', new Date(curve[0].t + 9 * 3600e3).getUTCHours() === 5);
+  ok('最高は14時', new Date(curve[1].t + 9 * 3600e3).getUTCHours() === 14);
+  ok('時刻が増える順に並ぶ',
+     curve.every(function (p, i) { return i === 0 || p.t > curve[i - 1].t; }));
+  /* 窓が途中から始まっても、線は左のふちから始まる */
+  const half = ctx.jmaTempCurve(day0 + 10 * 3600e3, day0 + 3 * 24 * 3600e3);
+  ok('窓の左ふちから始まる', half[0].t === day0 + 10 * 3600e3, half[0] && half[0].t - day0);
+  ok('ふちの値は前後のあいだ', half[0].v > 18 && half[0].v < 28, half[0] && half[0].v);
+  ctx.state.daily = saved.daily; ctx.state.future = saved.future;
+  ctx.state.weekly = saved.weekly; ctx.state.pops = saved.pops;
+  ctx.state.popBlocks = saved.popBlocks;
+
+  /* 最低は朝、最高は昼すぎ。発表の00時・09時の枠をそのまま置くと形が狂います */
+  ok('最低は朝、最高は昼すぎ', JMA_LOW_HOUR_OK());
+  function JMA_LOW_HOUR_OK() {
+    return ctx.JMA_LOW_HOUR === 5 && ctx.JMA_HIGH_HOUR === 14
+      && ctx.JMA_LOW_HOUR < ctx.JMA_HIGH_HOUR;
+  }
+
   console.log('\n' + pass + ' 件確認しました' + (process.exitCode ? '（失敗あり）' : ''));
 });

@@ -345,3 +345,56 @@ final class 雨量とグラフの範囲: XCTestCase {
         XCTAssertEqual(segs.first?.points.map(\.value), [0, 1, 0, 2, 0])
     }
 }
+
+final class 気象庁の気温予報の線: XCTestCase {
+
+    func pt(_ t: Double, _ v: Double) -> ChartPoint {
+        ChartPoint(time: Date(timeIntervalSince1970: t), value: v)
+    }
+    func at(_ t: Double) -> Date { Date(timeIntervalSince1970: t) }
+
+    func test_左のふちで切る() {
+        let out = ChartField.clip([pt(0, 10), pt(100, 20)], from: at(50), to: at(200))
+        XCTAssertEqual(out.count, 2)
+        XCTAssertEqual(out.first?.time, at(50))
+        XCTAssertEqual(out.first?.value ?? 0, 15, accuracy: 1e-9)
+    }
+
+    func test_右のふちで切る() {
+        let out = ChartField.clip([pt(0, 10), pt(100, 20)], from: at(-50), to: at(50))
+        XCTAssertEqual(out.count, 2)
+        XCTAssertEqual(out.last?.time, at(50))
+        XCTAssertEqual(out.last?.value ?? 0, 15, accuracy: 1e-9)
+    }
+
+    func test_両方のふちで切る() {
+        let out = ChartField.clip([pt(0, 0), pt(100, 100)], from: at(20), to: at(80))
+        XCTAssertEqual(out.map(\.time), [at(20), at(80)])
+        XCTAssertEqual(out.first?.value ?? 0, 20, accuracy: 1e-9)
+        XCTAssertEqual(out.last?.value ?? 0, 80, accuracy: 1e-9)
+    }
+
+    func test_ふちに乗った点は重ならない() {
+        // 同じ時刻が2つ並ぶと ForEach の id がぶつかります
+        let out = ChartField.clip([pt(0, 1), pt(50, 2), pt(100, 3)], from: at(50), to: at(100))
+        XCTAssertEqual(out.count, 2)
+        XCTAssertEqual(Set(out.map(\.time)).count, out.count)
+    }
+
+    func test_全部そとなら空() {
+        XCTAssertTrue(ChartField.clip([pt(0, 1), pt(10, 2)], from: at(50), to: at(100)).isEmpty)
+    }
+
+    func test_全部なかならそのまま() {
+        XCTAssertEqual(ChartField.clip([pt(60, 1), pt(70, 2)], from: at(50), to: at(100)).count, 2)
+    }
+
+    func test_最低は朝_最高は昼すぎ() {
+        // 気象庁の発表は00時・09時の枠です。そのまま置くと形が狂うので置き直します
+        XCTAssertEqual(DayMark.lowHour, 5)
+        XCTAssertEqual(DayMark.highHour, 14)
+        let day = JST.date(2026, 9, 15)
+        XCTAssertEqual(DayMark.lowTime(of: day), JST.date(2026, 9, 15, 5))
+        XCTAssertEqual(DayMark.highTime(of: day), JST.date(2026, 9, 15, 14))
+    }
+}

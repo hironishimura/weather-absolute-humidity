@@ -44,6 +44,10 @@ struct ChartsSection: View {
             }
 
             Text("実況は直近1時間ぶん、あとはこれからの予報です。"
+                 + "気象庁だけは時間ごとの気温予報を出していないため、"
+                 + "発表されている朝の最低（5時ごろ）と日中の最高（14時ごろ）を結んだ破線にしています。"
+                 + "丸がその発表値で、途中は目安です。"
+                 + "時間ごとの気象庁の予報を見たいときは、同じ気象庁の数値予報「気象庁 MSM/GSM」をご覧ください。"
                  + "降水確率は刻みが提供元で違うため、階段の幅が変わります"
                  + "（気象庁6時間・Yahoo!天気6時間・ウェザーニュース午前午後・数値予報1時間）。"
                  + "ECMWFに降水確率はありません。"
@@ -65,7 +69,7 @@ struct ChartsSection: View {
                         Capsule()
                             .fill(Color(hex: settings.hex(for: key)))
                             .frame(width: 16, height: 3)
-                        Text(key.short + (key == .jma ? "" : "（予報）"))
+                        Text(key.short + (key == .jma ? "（実況と日ごとの予報）" : "（予報）"))
                             .font(.caption2)
                             .foregroundStyle(.secondary)
                     }
@@ -137,6 +141,9 @@ struct ChartsSection: View {
                                  series: .value("線", s.id))
                             .foregroundStyle(by: .value("提供元", s.key.short))
                             .interpolationMethod(Self.method(field.interpolation))
+                            .lineStyle(StrokeStyle(lineWidth: 2, lineCap: .round,
+                                                   lineJoin: .round,
+                                                   dash: s.dashed ? [5, 4] : []))
                             .symbol(.circle)
                             .symbolSize(field.showsPoints ? 18 : 0)
                     }
@@ -151,15 +158,9 @@ struct ChartsSection: View {
                     let mid = m.mid(from: from, to: to)
                     let wide = m.visibleHours(from: from, to: to)
                         / ChartWindow.span(days: days) * 100
-                    if let hi = m.high, let lo = m.low {
-                        RuleMark(x: .value("日", mid),
-                                 yStart: .value("最低", lo),
-                                 yEnd: .value("最高", hi))
-                            .foregroundStyle(jma.opacity(0.45))
-                            .lineStyle(StrokeStyle(lineWidth: 1))
-                    }
-                    if let hi = m.high {
-                        PointMark(x: .value("日", mid), y: .value("最高", hi))
+                    // 丸は破線の上に乗せます。縦棒はもう引きません（線が同じことを示すので）
+                    if let hi = m.high, m.highTime >= from, m.highTime <= to {
+                        PointMark(x: .value("日", m.highTime), y: .value("最高", hi))
                             .symbol { Circle().stroke(jma, lineWidth: 2).frame(width: 8, height: 8) }
                             .annotation(position: .trailing, spacing: 3) {
                                 Text("\(Int(hi.rounded()))°")
@@ -167,8 +168,8 @@ struct ChartsSection: View {
                                     .foregroundStyle(.red)
                             }
                     }
-                    if let lo = m.low {
-                        PointMark(x: .value("日", mid), y: .value("最低", lo))
+                    if let lo = m.low, m.lowTime >= from, m.lowTime <= to {
+                        PointMark(x: .value("日", m.lowTime), y: .value("最低", lo))
                             .symbol { Circle().stroke(jma, lineWidth: 2).frame(width: 8, height: 8) }
                             .annotation(position: .trailing, spacing: 3) {
                                 Text("\(Int(lo.rounded()))°")

@@ -299,7 +299,46 @@ public final class WeatherStore {
                                        ? ChartField.perHour(points) : points))
             }
         }
+        // 気象庁だけは時間ごとの気温予報がありません。
+        // 日ごとの最低・最高をつないだ目安の線を足して、先まで見えるようにします。
+        if field == .temp {
+            let curve = jmaTempCurve(days: days)
+            if curve.count >= 2 {
+                out.append(ChartSeries(key: .jma, segment: 1, dashed: true, points: curve))
+            }
+        }
         return out
+    }
+
+    /// 気象庁の日ごとの気温予報を、1本の線にします。
+    ///
+    /// 気象庁は時間ごとの気温予報を出していません。出しているのは
+    /// 「朝の最低気温」と「日中の最高気温」です。
+    /// そこで、その値をいちばん起こりやすい時刻（最低5時・最高14時）に置いてつなぎます。
+    /// 途中の値は目安なので、グラフでは破線にしています。
+    public func jmaTempCurve(days: Int) -> [ChartPoint] {
+        let now = Date()
+        let from = now.addingTimeInterval(-ChartWindow.pastSeconds)
+        let to = now.addingTimeInterval(TimeInterval(days * 24 * 3600))
+        guard let jma = weekly[.jma] else { return [] }
+
+        // 窓の外の日もいちど作ります。あとで端を切るので、線が端まで届きます。
+        var points: [ChartPoint] = []
+        var day = JST.startOfDay(from).addingTimeInterval(-24 * 3600)
+        let last = to.addingTimeInterval(24 * 3600)
+        while day < last {
+            if let d = jma[JST.dayKey(day)] {
+                if let lo = d.min {
+                    points.append(ChartPoint(time: DayMark.lowTime(of: day), value: lo))
+                }
+                if let hi = d.max {
+                    points.append(ChartPoint(time: DayMark.highTime(of: day), value: hi))
+                }
+            }
+            day = day.addingTimeInterval(24 * 3600)
+        }
+        points.sort { $0.time < $1.time }
+        return ChartField.clip(points, from: from, to: to)
     }
 }
 
@@ -401,6 +440,33 @@ public enum ChartField: String, CaseIterable, Sendable, Identifiable {
         return points.map { ChartPoint(time: $0.time, value: $0.value / step) }
     }
 
+    /// 窓からはみ出した線を、ふちで切ります。
+    /// 切ったところの値は前後からまっすぐ結んで求めるので、線が端まで届きます。
+    static func clip(_ points: [ChartPoint], from: Date, to: Date) -> [ChartPoint] {
+        var out: [ChartPoint] = []
+        for (i, p) in points.enumerated() {
+            if i > 0 {
+                let a = points[i - 1]
+                for edge in [from, to] where (a.time < edge) != (p.time < edge) {
+                    out.append(between(a, p, at: edge))
+                }
+            }
+            if p.time >= from && p.time <= to { out.append(p) }
+        }
+        out.sort { $0.time < $1.time }
+        // 同じ時刻がふたつ並ぶと ForEach が困るので、ひとつにします
+        var uniq: [ChartPoint] = []
+        for p in out where uniq.last?.time != p.time { uniq.append(p) }
+        return uniq
+    }
+
+    private static func between(_ a: ChartPoint, _ b: ChartPoint, at t: Date) -> ChartPoint {
+        let span = b.time.timeIntervalSince(a.time)
+        guard span != 0 else { return ChartPoint(time: t, value: a.value) }
+        let k = t.timeIntervalSince(a.time) / span
+        return ChartPoint(time: t, value: a.value + (b.value - a.value) * k)
+    }
+
     func value(_ row: HourlyRow) -> Double? {
         switch self {
         case .temp: return row.temp
@@ -429,6 +495,22 @@ public struct DayMark: Identifiable, Sendable {
 
     public var id: String { dayKey }
 
+    /// 気象庁の最低・最高が起こりやすい時刻。丸印と線はここに置きます。
+    /// 気象庁の発表は00時・09時の枠ですが、実際に下がりきる／上がりきるのはこのあたりです。
+    public static let lowHour = 5
+    public static let highHour = 14
+
+    public static func lowTime(of day: Date) -> Date {
+        day.addingTimeInterval(TimeInterval(lowHour * 3600))
+    }
+    public static func highTime(of day: Date) -> Date {
+        day.addingTimeInterval(TimeInterval(highHour * 3600))
+    }
+
+    /// この日の最低・最高を置く時刻
+    public var lowTime: Date { Self.lowTime(of: start) }
+    public var highTime: Date { Self.highTime(of: start) }
+
     /// 画面に見えている部分の真ん中。端の日は切れたぶんを除いて置きます
     public func mid(from: Date, to: Date) -> Date {
         let a = Swift.max(start, from), b = Swift.min(end, to)
@@ -453,6 +535,8 @@ public struct ChartSeries: Identifiable, Sendable {
     public var key: SourceKey
     /// 同じ提供元で線が分かれるときの通し番号（雨量の山ごと）
     public var segment: Int = 0
+    /// 目安の線（気象庁の日ごとの予報をつないだもの）は破線にします
+    public var dashed: Bool = false
     public var points: [ChartPoint]
     public var id: String { "\(key.rawValue)#\(segment)" }
 }

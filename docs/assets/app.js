@@ -24,12 +24,19 @@ var COLOR_KEY = 'dc-weather-colors';
 var AUTO_RELOAD_MS = 10 * 60 * 1000;
 /* グラフに出す過去の長さ（時間）。実況の直近ぶんだけ出します。 */
 var PAST_HOURS = 1;
+/* 気象庁の最低・最高が起こりやすい時刻。発表は00時・09時の枠ですが、
+   実際に下がりきる／上がりきるのはこのあたりです。 */
+var JMA_LOW_HOUR = 5;
+var JMA_HIGH_HOUR = 14;
 
 /* 提供元の表示名と色（CSS変数と合わせています） */
 var SOURCES = {
-  jma:         { name: '気象庁', short: '気象庁 実況', color: '#C77B1E',
-                 about: '近隣アメダスの観測値です。' },
-  model:       { name: '気象庁MSM/GSM', short: 'MSM/GSM', color: '#1F6FEB',
+  jma:         { name: '気象庁', short: '気象庁', color: '#C77B1E',
+                 about: '近隣アメダスの観測値と、府県天気予報・週間予報です。'
+                        + '気象庁は時間ごとの気温予報を出していないため、'
+                        + 'グラフの先のほうは、発表されている朝の最低（5時ごろ）と'
+                        + '日中の最高（14時ごろ）を結んだ破線＝目安です。' },
+  model:       { name: '気象庁MSM/GSM', short: '気象庁 MSM/GSM', color: '#1F6FEB',
                  about: '気象庁の数値予報を Open-Meteo 経由で取得。実測値ではありません。'
                         + '降水確率だけは気象庁モデルに入っていないため、Open-Meteo の総合予報の値です。' },
   yahoo:       { name: 'Yahoo!天気', short: 'Yahoo!天気', color: '#C0392B',
@@ -1350,40 +1357,6 @@ function lineChart(o) {
     svg.appendChild(svgEl('line', { class: 'now-line', x1: x(nowT), x2: x(nowT), y1: PT, y2: H - PB }));
   }
 
-  /* 日ごとの最高・最低・天気（気温のグラフだけ） */
-  (o.marks || []).forEach(function (m) {
-    var left = Math.max(m.t0, o.xMin), right = Math.min(m.t1, o.xMax);
-    var wide = x(right) - x(left);
-    if (wide < 40) { return; }
-    var cx = x((left + right) / 2);
-
-    if (isNum(m.max) && isNum(m.min)) {
-      svg.appendChild(svgEl('line', {
-        x1: cx, x2: cx, y1: y(m.max), y2: y(m.min),
-        stroke: m.color, 'stroke-width': 1, opacity: '.45'
-      }));
-    }
-    [['max', m.max], ['min', m.min]].forEach(function (pair) {
-      if (!isNum(pair[1])) { return; }
-      svg.appendChild(svgEl('circle', {
-        cx: cx, cy: y(pair[1]), r: 3.5, fill: 'none', stroke: m.color, 'stroke-width': 2
-      }));
-      var vt = svgEl('text', {
-        class: 'mark ' + (pair[0] === 'max' ? 'mark--hi' : 'mark--lo'),
-        x: cx + 7, y: y(pair[1]) + 4
-      });
-      vt.textContent = Math.round(pair[1]) + '°';
-      svg.appendChild(vt);
-    });
-
-    if (m.weather && wide >= 62) {
-      var per = Math.floor(wide / 11);
-      var wt = svgEl('text', { class: 'mark mark--w', x: cx, y: 11, 'text-anchor': 'middle' });
-      wt.textContent = m.weather.length > per ? m.weather.slice(0, Math.max(2, per - 1)) + '…' : m.weather;
-      svg.appendChild(wt);
-    }
-  });
-
   /* 折れ線（値がひとつしかない提供元は丸で置く） */
   o.series.forEach(function (s) {
     if (!s.points.length) { return; }
@@ -1398,10 +1371,13 @@ function lineChart(o) {
     var d = s.points.map(function (p, i) {
       return (i ? 'L' : 'M') + x(p.t).toFixed(1) + ' ' + y(p.v).toFixed(1);
     }).join(' ');
-    svg.appendChild(svgEl('path', {
+    var attrs = {
       d: d, fill: 'none', stroke: s.color, 'stroke-width': 2,
       'stroke-linejoin': 'round', 'stroke-linecap': 'round'
-    }));
+    };
+    /* 目安の線（気象庁の日ごとの予報をつないだもの）は破線にします */
+    if (s.dashed) { attrs['stroke-dasharray'] = '5 4'; }
+    svg.appendChild(svgEl('path', attrs));
     /* 雨量は提供元で刻みが違うので、どこが実際の値かを小さな丸で示す */
     if (o.dots) {
       s.points.forEach(function (p) {
@@ -1409,6 +1385,39 @@ function lineChart(o) {
           cx: x(p.t).toFixed(1), cy: y(p.v).toFixed(1), r: 2.5, fill: s.color, stroke: 'none'
         }));
       });
+    }
+  });
+
+  /* 日ごとの最高・最低・天気（気温のグラフだけ） */
+  (o.marks || []).forEach(function (m) {
+    var left = Math.max(m.t0, o.xMin), right = Math.min(m.t1, o.xMax);
+    var wide = x(right) - x(left);
+    if (wide < 40) { return; }
+    var cx = x((left + right) / 2);
+
+    /* 丸は破線の上に乗せます。縦棒はもう引きません（線が同じことを示すので） */
+    [['max', m.max, m.tHigh], ['min', m.min, m.tLow]].forEach(function (pair) {
+      if (!isNum(pair[1])) { return; }
+      var t = pair[2];
+      if (!isNum(t) || t < o.xMin || t > o.xMax) { return; }
+      var px = x(t);
+      svg.appendChild(svgEl('circle', {
+        cx: px.toFixed(1), cy: y(pair[1]).toFixed(1), r: 3.5,
+        fill: 'none', stroke: m.color, 'stroke-width': 2
+      }));
+      var vt = svgEl('text', {
+        class: 'mark ' + (pair[0] === 'max' ? 'mark--hi' : 'mark--lo'),
+        x: (px + 7).toFixed(1), y: (y(pair[1]) + 4).toFixed(1)
+      });
+      vt.textContent = Math.round(pair[1]) + '°';
+      svg.appendChild(vt);
+    });
+
+    if (m.weather && wide >= 62) {
+      var per = Math.floor(wide / 11);
+      var wt = svgEl('text', { class: 'mark mark--w', x: cx, y: 11, 'text-anchor': 'middle' });
+      wt.textContent = m.weather.length > per ? m.weather.slice(0, Math.max(2, per - 1)) + '…' : m.weather;
+      svg.appendChild(wt);
     }
   });
 
@@ -1450,15 +1459,17 @@ function chartSeries() {
   var weeklyByKey = buildWeekly().byKey;
   var jmaPops = popRowsFor('jma', weeklyByKey);
 
+  /* 気象庁は実況（アメダス）と、日ごとの予報（府県・週間）の両方を出します */
+  var jmaNote = '実況と日ごとの予報';
   if (state.past.length) {
-    out.push({ key: 'jma', color: colorOf('jma'), rows: state.past, popRows: jmaPops, note: '' });
+    out.push({ key: 'jma', color: colorOf('jma'), rows: state.past, popRows: jmaPops, note: jmaNote });
   } else if (state.now.jma && state.now.jma.values) {
     out.push({
       key: 'jma', color: colorOf('jma'), rows: [pointRow(state.now.jma)],
-      popRows: jmaPops, single: true, note: ''
+      popRows: jmaPops, single: true, note: jmaNote
     });
   } else if (jmaPops.length) {
-    out.push({ key: 'jma', color: colorOf('jma'), rows: [], popRows: jmaPops, note: '' });
+    out.push({ key: 'jma', color: colorOf('jma'), rows: [], popRows: jmaPops, note: jmaNote });
   }
 
   SOURCE_KEYS.filter(function (k) { return k !== 'jma'; }).forEach(function (k) {
@@ -1495,12 +1506,56 @@ function dailyMarks(xMin, xMax) {
     if (!isNum(j.max) && !isNum(j.min) && !j.weather) { return; }
     marks.push({
       t0: d.t0, t1: d.t1, color: colorOf('jma'),
+      /* 丸は日の真ん中ではなく、最低・最高が起こりやすい時刻に置きます */
+      tLow: d.t0 + JMA_LOW_HOUR * 3600e3,
+      tHigh: d.t0 + JMA_HIGH_HOUR * 3600e3,
       max: isNum(j.max) ? j.max : null,
       min: isNum(j.min) ? j.min : null,
       weather: j.weather || ''
     });
   });
   return marks;
+}
+
+/* 気象庁の日ごとの気温予報を、1本の線にする。
+
+   気象庁は時間ごとの気温予報を出していません。出しているのは
+   「朝の最低気温」と「日中の最高気温」です。
+   そこで、その値をいちばん起こりやすい時刻に置いてつなぎます。
+   途中の値は目安なので、グラフでは破線にしています。 */
+function jmaTempCurve(xMin, xMax) {
+  var jma = buildWeekly().byKey.jma;
+  var points = [];
+  /* 窓の外の日もいちど作ります。あとで端を切るので、線が端まで届きます。 */
+  daysInRange(xMin - 24 * 3600e3, xMax + 24 * 3600e3).forEach(function (d) {
+    var j = jma[d.key];
+    if (!j) { return; }
+    if (isNum(j.min)) { points.push({ t: d.t0 + JMA_LOW_HOUR * 3600e3, v: j.min }); }
+    if (isNum(j.max)) { points.push({ t: d.t0 + JMA_HIGH_HOUR * 3600e3, v: j.max }); }
+  });
+  points.sort(function (a, b) { return a.t - b.t; });
+  return clipSeries(points, xMin, xMax);
+}
+
+/* 窓からはみ出した線を、ふちで切る。
+   切ったところの値は前後からまっすぐ結んで求めるので、線が端まで届きます。 */
+function clipSeries(points, xMin, xMax) {
+  var out = [];
+  points.forEach(function (p, i) {
+    if (i > 0) {
+      var a = points[i - 1];
+      [xMin, xMax].forEach(function (edge) {
+        if ((a.t < edge) === (p.t < edge)) { return; }
+        var span = p.t - a.t;
+        var k = span === 0 ? 0 : (edge - a.t) / span;
+        out.push({ t: edge, v: a.v + (p.v - a.v) * k });
+      });
+    }
+    if (p.t >= xMin && p.t <= xMax) { out.push(p); }
+  });
+  out.sort(function (a, b) { return a.t - b.t; });
+  /* 同じ時刻がふたつ並ばないようにします */
+  return out.filter(function (p, i) { return i === 0 || p.t !== out[i - 1].t; });
 }
 
 function renderChart() {
@@ -1532,7 +1587,7 @@ function renderChart() {
   var ring = el('span', 'legend__r');
   ring.style.borderColor = colorOf('jma');
   mk.appendChild(ring);
-  mk.appendChild(document.createTextNode('気象庁の日ごとの最高／最低と天気'));
+  mk.appendChild(document.createTextNode('気象庁の日ごとの最高／最低と天気（破線はそのあいだの目安）'));
   legend.appendChild(mk);
 
   var marks = dailyMarks(xMin, xMax);
@@ -1588,6 +1643,16 @@ function renderChart() {
       }
       series.push({ color: g.color, single: single, points: points });
     });
+
+    /* 気象庁だけは時間ごとの気温予報がありません。
+       日ごとの最低・最高をつないだ目安の線を足して、先まで見えるようにします。 */
+    if (c.key === 'temp') {
+      var jmaCurve = jmaTempCurve(xMin, xMax);
+      if (jmaCurve.length >= 2) {
+        series.push({ color: colorOf('jma'), single: false, dashed: true, points: jmaCurve });
+        hadValues = true;
+      }
+    }
 
     if (series.length || (c.marks && c.marks.length) || hadValues) {
       box.appendChild(lineChart({

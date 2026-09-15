@@ -27,8 +27,8 @@ public enum SourceKey: String, CaseIterable, Codable, Sendable, Identifiable {
     /// 凡例などで使う短い名前
     public var short: String {
         switch self {
-        case .jma: return "気象庁 実況"
-        case .model: return "MSM/GSM"
+        case .jma: return "気象庁"
+        case .model: return "気象庁 MSM/GSM"
         case .ecmwf: return "ECMWF"
         case .yahoo: return "Yahoo!天気"
         case .weathernews: return "ウェザーニュース"
@@ -38,7 +38,10 @@ public enum SourceKey: String, CaseIterable, Codable, Sendable, Identifiable {
     public var about: String {
         switch self {
         case .jma:
-            return "近隣アメダスの観測値です。"
+            return "近隣アメダスの観測値と、府県天気予報・週間予報です。"
+                + "気象庁は時間ごとの気温予報を出していないため、"
+                + "グラフの先のほうは、発表されている朝の最低（5時ごろ）と"
+                + "日中の最高（14時ごろ）を結んだ破線＝目安です。"
         case .model:
             return "気象庁の数値予報を Open-Meteo 経由で取得。実測値ではありません。"
                 + "降水確率だけは気象庁モデルに入っていないため、Open-Meteo の総合予報の値です。"
