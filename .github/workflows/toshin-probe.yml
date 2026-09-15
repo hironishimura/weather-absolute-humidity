@@ -14,3 +14,5 @@ jobs:
         with: { python-version: '3.12' }
       - name: 地名から緯度経度を引けるか
         run: python3 scripts/probe_geocode.py
+      - name: 詰めの確認
+        run: python3 scripts/probe_geocode2.py
