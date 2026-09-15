@@ -82,6 +82,9 @@ private struct DetailView: View {
     @Binding var showPlaces: Bool
     var compact: Bool
 
+    @State private var locating = false
+    @State private var locateError: String?
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 22) {
@@ -118,6 +121,14 @@ private struct DetailView: View {
             #endif
             ToolbarItem(placement: .primaryAction) {
                 Button {
+                    locate()
+                } label: {
+                    Label("現在地", systemImage: "location")
+                }
+                .disabled(locating || weather.isLoading)
+            }
+            ToolbarItem(placement: .primaryAction) {
+                Button {
                     Task { await weather.refresh(place: settings.active) }
                 } label: {
                     Label("更新", systemImage: "arrow.clockwise")
@@ -125,15 +136,43 @@ private struct DetailView: View {
                 .disabled(weather.isLoading)
             }
         }
+        .alert("現在地", isPresented: Binding(get: { locateError != nil },
+                                          set: { if !$0 { locateError = nil } })) {
+            Button("閉じる", role: .cancel) { locateError = nil }
+        } message: {
+            Text(locateError ?? "")
+        }
         .refreshable {
             await weather.refresh(place: settings.active)
         }
         .overlay(alignment: .top) {
-            if weather.isLoading {
+            if weather.isLoading || locating {
                 ProgressView()
                     .padding(8)
                     .background(.regularMaterial, in: Capsule())
                     .padding(.top, 6)
+            }
+        }
+    }
+
+    /// 現在地をひとつ取って、その場所の天気に切り替えます。
+    /// 現在地の地点はひとつだけ持ち、押すたびに位置を入れ替えます（Web版と同じ）。
+    private func locate() {
+        guard !locating else { return }
+        locating = true
+        Task { @MainActor in
+            defer { locating = false }
+            // 押されたときだけ作ります。位置を追いかけ続けることはしません。
+            let locator = LocationProvider()
+            do {
+                let c = try await locator.current()
+                // すでに現在地を見ているときは地点が変わらないので、
+                // 自動の読み直しが走りません。そのときだけ自分で読み直します。
+                let wasHere = settings.active.isHere
+                settings.setHere(lat: c.latitude, lon: c.longitude)
+                if wasHere { await weather.refresh(place: settings.active) }
+            } catch {
+                locateError = error.localizedDescription
             }
         }
     }

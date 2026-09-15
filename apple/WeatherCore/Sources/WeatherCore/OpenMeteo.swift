@@ -36,13 +36,13 @@ public struct OpenMeteoClient: Sendable {
         var hourly: Hourly?
     }
 
-    func valuesURL(_ place: Place, withModel: Bool) -> URL {
+    func valuesURL(_ place: Place, withModel: Bool, models: String = "jma_seamless") -> URL {
         var s = "\(Endpoints.openMeteo)?latitude=\(String(format: "%.4f", place.lat))"
             + "&longitude=\(String(format: "%.4f", place.lon))"
             + "&hourly=temperature_2m,relative_humidity_2m,surface_pressure,precipitation"
             + "&current=temperature_2m,relative_humidity_2m,surface_pressure"
             + "&timezone=Asia%2FTokyo&forecast_days=10&past_days=1"
-        if withModel { s += "&models=jma_seamless" }
+        if withModel { s += "&models=" + models }
         return Endpoints.url(s)
     }
 
@@ -53,12 +53,20 @@ public struct OpenMeteoClient: Sendable {
             + "&timezone=Asia%2FTokyo&forecast_days=10&past_days=1")
     }
 
-    public func load(place: Place) async throws -> ModelResult {
-        async let popTask: Payload? = try? await fetcher.decode(Payload.self, from: popURL(place))
+    /// 数値予報を読みます。
+    /// 降水確率は総合予報からしか取れないので、気象庁モデルのときだけ頼みます
+    /// （モデルを指定すると全部からになることを実測で確かめています）。
+    public func load(place: Place, models: String = "jma_seamless",
+                     wantsPop: Bool = true) async throws -> ModelResult {
+        async let popTask: Payload? = wantsPop
+            ? try? await fetcher.decode(Payload.self, from: popURL(place))
+            : nil
 
         var payload: Payload
         do {
-            payload = try await fetcher.decode(Payload.self, from: valuesURL(place, withModel: true))
+            payload = try await fetcher.decode(Payload.self,
+                                               from: valuesURL(place, withModel: true,
+                                                               models: models))
         } catch {
             // モデル指定が通らないときはモデルなしで取り直します
             payload = try await fetcher.decode(Payload.self, from: valuesURL(place, withModel: false))

@@ -22,6 +22,11 @@ struct StatusSection: View {
                         Text(line.name).font(.caption.bold())
                         Text(line.message).font(.caption2).foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
+                        // 提供元の説明もここに出します（カードを短くするため）
+                        if let about = SourceKey(rawValue: line.key)?.about {
+                            Text(about).font(.caption2).foregroundStyle(.tertiary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
                     }
                     Spacer(minLength: 0)
                 }

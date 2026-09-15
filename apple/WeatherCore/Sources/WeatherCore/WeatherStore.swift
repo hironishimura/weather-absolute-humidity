@@ -74,12 +74,14 @@ public final class WeatherStore {
             group.addTask { await self.loadAmedas(place) }
             group.addTask { await self.loadForecast(place) }
             group.addTask { await self.loadModel(place) }
+            group.addTask { await self.loadECMWF(place) }
             group.addTask { await self.loadSnapshot(place) }
             group.addTask { await self.loadAccuracy(place) }
         }
 
         weekly = Aggregate.weekly(jmaDaily: jmaDaily,
                                   modelRows: future[.model] ?? [],
+                                  ecmwfRows: future[.ecmwf] ?? [],
                                   snapshot: snapshotSources,
                                   popBlocks: popBlocks)
         updatedAt = Date()
@@ -134,6 +136,21 @@ public final class WeatherStore {
                                   : "（降水確率は取れませんでした）"))
         } catch {
             setStatus("model", SourceKey.model.name, .failed,
+                      "取得できませんでした（\(error.localizedDescription)）")
+        }
+    }
+
+    /// ECMWF（欧州中期予報センター）の全球モデル。
+    /// 気象庁とは別の計算なので、見通しが立つかどうかの手がかりになります。
+    private func loadECMWF(_ place: Place) async {
+        do {
+            let r = try await model.load(place: place, models: "ecmwf_ifs025", wantsPop: false)
+            future[.ecmwf] = r.rows
+            if let now = r.now { nows[.ecmwf] = now }
+            setStatus("ecmwf", SourceKey.ecmwf.name, .ok,
+                      "\(r.rows.count)時間ぶんの予報を読み込みました（このモデルに降水確率はありません）")
+        } catch {
+            setStatus("ecmwf", SourceKey.ecmwf.name, .failed,
                       "取得できませんでした（\(error.localizedDescription)）")
         }
     }
@@ -205,7 +222,7 @@ public final class WeatherStore {
     public var average: AverageNow { Aggregate.average(nows) }
 
     public var statusOrdered: [StatusLine] {
-        let order = ["jma", "jma_forecast", "model", "yahoo", "weathernews", "snapshot"]
+        let order = ["jma", "jma_forecast", "model", "ecmwf", "yahoo", "weathernews", "snapshot"]
         return status.sorted {
             (order.firstIndex(of: $0.key) ?? 99) < (order.firstIndex(of: $1.key) ?? 99)
         }
@@ -223,6 +240,28 @@ public final class WeatherStore {
         let raw = rawSeries(for: field, days: days)
         guard field == .precip else { return raw }
         return raw.flatMap { ChartField.rainSegments($0) }
+    }
+
+    /// 気温グラフに重ねる、日ごとの最高・最低と天気（気象庁の予報）。
+    /// Web版と同じで、日の真ん中に縦棒と丸で置きます。
+    public func dailyMarks(days: Int) -> [DayMark] {
+        let now = Date()
+        let from = now.addingTimeInterval(-ChartWindow.pastSeconds)
+        let to = now.addingTimeInterval(TimeInterval(days * 24 * 3600))
+        guard let jma = weekly[.jma] else { return [] }
+
+        var out: [DayMark] = []
+        var day = JST.startOfDay(from)
+        while day < to {
+            let end = day.addingTimeInterval(24 * 3600)
+            if let d = jma[JST.dayKey(day)],
+               d.max != nil || d.min != nil || !d.weather.isEmpty {
+                out.append(DayMark(dayKey: JST.dayKey(day), start: day, end: end,
+                                   high: d.max, low: d.min, weather: d.weather))
+            }
+            day = end
+        }
+        return out
     }
 
     /// その項目に出せる値がひとつでもあるか。
@@ -377,6 +416,31 @@ public enum ChartField: String, CaseIterable, Sendable, Identifiable {
 /// 線のつなぎ方。Charts に依らずここで決めておきます
 public enum LineShape: Sendable {
     case smooth, straight, stepEnd
+}
+
+/// 気温グラフに重ねる、1日ぶんの最高・最低と天気
+public struct DayMark: Identifiable, Sendable {
+    public var dayKey: String
+    public var start: Date
+    public var end: Date
+    public var high: Double?
+    public var low: Double?
+    public var weather: String
+
+    public var id: String { dayKey }
+
+    /// 画面に見えている部分の真ん中。端の日は切れたぶんを除いて置きます
+    public func mid(from: Date, to: Date) -> Date {
+        let a = Swift.max(start, from), b = Swift.min(end, to)
+        return Date(timeIntervalSince1970:
+                        (a.timeIntervalSince1970 + b.timeIntervalSince1970) / 2)
+    }
+
+    /// 画面に見えている幅［時間］。せまい日は数字を出しません
+    public func visibleHours(from: Date, to: Date) -> Double {
+        let a = Swift.max(start, from), b = Swift.min(end, to)
+        return Swift.max(b.timeIntervalSince(a) / 3600, 0)
+    }
 }
 
 public struct ChartPoint: Identifiable, Sendable {

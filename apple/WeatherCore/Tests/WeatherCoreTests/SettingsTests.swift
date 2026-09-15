@@ -35,6 +35,37 @@ final class 地点の保存: XCTestCase {
         XCTAssertEqual(store.active.id, tokyo.id)
     }
 
+    func test_現在地は先頭にひとつだけ増える() {
+        let store = SettingsStore(backend: 置き場所の差し替え())
+        store.setHere(lat: 36.5551, lon: 139.8828)
+        XCTAssertEqual(store.places.count, 2)
+        XCTAssertEqual(store.places.first?.id, Place.hereID)
+        XCTAssertEqual(store.active.label, "現在地")
+        XCTAssertTrue(store.active.isHere)
+    }
+
+    func test_現在地は押すたび位置だけ入れ替わる() {
+        let store = SettingsStore(backend: 置き場所の差し替え())
+        store.setHere(lat: 36.5551, lon: 139.8828)
+        store.setHere(lat: 35.6812, lon: 139.7671)
+        // 増えません。ひとつを使い回します
+        XCTAssertEqual(store.places.count, 2)
+        XCTAssertEqual(store.places.filter(\.isHere).count, 1)
+        XCTAssertEqual(store.active.lat, 35.6812, accuracy: 0.0001)
+        XCTAssertEqual(store.active.lon, 139.7671, accuracy: 0.0001)
+    }
+
+    func test_ほかの地点に移ってからでも現在地に戻れる() {
+        let store = SettingsStore(backend: 置き場所の差し替え())
+        store.setHere(lat: 36.5551, lon: 139.8828)
+        let tokyo = Place(label: "東京 現場", lat: 35.6812, lon: 139.7671)
+        store.add(tokyo)
+        XCTAssertFalse(store.active.isHere)
+        store.setHere(lat: 34.6937, lon: 135.5023)
+        XCTAssertTrue(store.active.isHere)
+        XCTAssertEqual(store.places.count, 3)
+    }
+
     func test_書き換えられる() {
         let store = SettingsStore(backend: 置き場所の差し替え())
         var p = store.active

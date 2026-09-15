@@ -7,6 +7,7 @@ import Foundation
 public enum SourceKey: String, CaseIterable, Codable, Sendable, Identifiable {
     case jma
     case model
+    case ecmwf
     case yahoo
     case weathernews
 
@@ -17,6 +18,7 @@ public enum SourceKey: String, CaseIterable, Codable, Sendable, Identifiable {
         switch self {
         case .jma: return "気象庁"
         case .model: return "気象庁MSM/GSM"
+        case .ecmwf: return "ECMWF"
         case .yahoo: return "Yahoo!天気"
         case .weathernews: return "ウェザーニュース"
         }
@@ -27,6 +29,7 @@ public enum SourceKey: String, CaseIterable, Codable, Sendable, Identifiable {
         switch self {
         case .jma: return "気象庁 実況"
         case .model: return "MSM/GSM"
+        case .ecmwf: return "ECMWF"
         case .yahoo: return "Yahoo!天気"
         case .weathernews: return "ウェザーニュース"
         }
@@ -39,6 +42,10 @@ public enum SourceKey: String, CaseIterable, Codable, Sendable, Identifiable {
         case .model:
             return "気象庁の数値予報を Open-Meteo 経由で取得。実測値ではありません。"
                 + "降水確率だけは気象庁モデルに入っていないため、Open-Meteo の総合予報の値です。"
+        case .ecmwf:
+            return "欧州中期予報センターの全球モデル（IFS 0.25°）を Open-Meteo 経由で取得。"
+                + "気象庁とは別の計算なので、両者が一致していれば見通しが立ち、"
+                + "割れていれば難しい状況だと分かります。降水確率は出ません。"
         case .yahoo:
             return "3時間ごとの予報値です。"
         case .weathernews:
@@ -46,11 +53,15 @@ public enum SourceKey: String, CaseIterable, Codable, Sendable, Identifiable {
         }
     }
 
+    /// 降水確率を出す提供元。ECMWF は降水確率を持たないので当たり具合も数えません
+    public static var withPop: [SourceKey] { allCases.filter { $0 != .ecmwf } }
+
     /// 既定の色（Web版と同じ）
     public var defaultHex: String {
         switch self {
         case .jma: return "#C77B1E"
         case .model: return "#1F6FEB"
+        case .ecmwf: return "#7B3FA0"
         case .yahoo: return "#C0392B"
         case .weathernews: return "#1F7A55"
         }
@@ -74,6 +85,12 @@ public struct Place: Identifiable, Codable, Equatable, Sendable {
         self.lon = lon
         self.office = office
     }
+
+    /// 現在地の地点はひとつだけ持ち、押すたびに位置を入れ替えます。
+    /// 決め打ちのidにしておくと、保存済みの形を変えずに見分けられます。
+    public static let hereID = "here"
+
+    public var isHere: Bool { id == Place.hereID }
 
     public static func newID() -> String {
         "p" + String(Int(Date().timeIntervalSince1970 * 1000), radix: 36)

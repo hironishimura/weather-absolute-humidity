@@ -221,6 +221,56 @@ final class 雨量とグラフの範囲: XCTestCase {
         XCTAssertEqual(AxisTicks.hours(span: ChartWindow.span(days: 7), usable: 1006).step, 24)
     }
 
+    func test_日ごとの印は見えている幅で真ん中を決める() {
+        let day = JST.date(2026, 9, 10)
+        let m = DayMark(dayKey: "2026-09-10", start: day,
+                        end: day.addingTimeInterval(24 * 3600),
+                        high: 29, low: 19, weather: "くもり")
+        // まるごと見えていれば正午が真ん中
+        let whole = m.mid(from: day, to: day.addingTimeInterval(24 * 3600))
+        XCTAssertEqual(JST.parts(whole).hour, 12)
+        XCTAssertEqual(m.visibleHours(from: day, to: day.addingTimeInterval(24 * 3600)), 24)
+
+        // 午後6時から見え始める日は、そのぶん右に寄る
+        let cut = day.addingTimeInterval(18 * 3600)
+        let half = m.mid(from: cut, to: day.addingTimeInterval(24 * 3600))
+        XCTAssertEqual(JST.parts(half).hour, 21)
+        XCTAssertEqual(m.visibleHours(from: cut, to: day.addingTimeInterval(24 * 3600)), 6)
+    }
+
+    func test_見えていない日は幅がゼロ() {
+        let day = JST.date(2026, 9, 10)
+        let m = DayMark(dayKey: "2026-09-10", start: day,
+                        end: day.addingTimeInterval(24 * 3600),
+                        high: 29, low: 19, weather: "")
+        let later = day.addingTimeInterval(48 * 3600)
+        XCTAssertEqual(m.visibleHours(from: later, to: later.addingTimeInterval(3600)), 0)
+    }
+
+    func test_ECMWFが提供元に入っている() {
+        XCTAssertTrue(SourceKey.allCases.contains(.ecmwf))
+        XCTAssertEqual(SourceKey.ecmwf.name, "ECMWF")
+        XCTAssertEqual(SourceKey.ecmwf.defaultHex, "#7B3FA0")
+        // 色は提供元ごとに別であること（同じだと線の見分けがつきません）
+        let hexes = SourceKey.allCases.map(\.defaultHex)
+        XCTAssertEqual(Set(hexes).count, hexes.count)
+    }
+
+    func test_ECMWFは降水確率を数えない() {
+        // Open-Meteo はモデル指定つきだと降水確率を返しません（実測で確認）
+        XCTAssertFalse(SourceKey.withPop.contains(.ecmwf))
+        XCTAssertTrue(SourceKey.withPop.contains(.model))
+        XCTAssertEqual(SourceKey.withPop.count, SourceKey.allCases.count - 1)
+    }
+
+    func test_ECMWFのURLにモデル名が入る() {
+        let c = OpenMeteoClient(fetcher: URLSessionFetcher())
+        let url = c.valuesURL(.宇都宮, withModel: true, models: "ecmwf_ifs025")
+        XCTAssertTrue(url.absoluteString.contains("models=ecmwf_ifs025"), url.absoluteString)
+        // 雨量を頼み忘れると雨量のグラフが消えます
+        XCTAssertTrue(url.absoluteString.contains("precipitation"), url.absoluteString)
+    }
+
     func test_絶対湿度は重量で出す() {
         XCTAssertEqual(ChartField.ah.title, "絶対湿度")
         XCTAssertEqual(ChartField.ah.unit, "g/kg(DA)")

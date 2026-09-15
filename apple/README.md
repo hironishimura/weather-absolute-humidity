@@ -6,6 +6,12 @@ Web版と同じ中身を、Apple の端末で動くアプリにしたもので�
 登録した地点と提供元の色は **iCloud** で行き来するので、
 iPhone で地点を足すと iPad と Mac にも出てきます。
 
+右上の**現在地**ボタンで、いまいる場所の天気に切り替わります。
+現在地の地点はひとつだけ持ち、押すたびに位置を入れ替えます（Web版と同じ）。
+はじめて押したときに位置情報の許可を聞かれます。
+断ったあとで使いたくなったら、設定（Mac はシステム設定）の
+プライバシーとセキュリティ → 位置情報サービス から許可してください。
+
 ```
 apple/
   WeatherAH.xcodeproj      ← Xcode で開くのはこれ
@@ -53,6 +59,45 @@ Apple ID を Xcode に入れていないときは
 - **iPhone・iPad** … ケーブルでつなぐか、同じ Wi-Fi にいる端末を選ぶ
   （はじめて入れたときは、端末側で
   **設定 → 一般 → VPNとデバイス管理** から自分の Apple ID を「信頼」してください）
+
+## Mac に置いて、Xcode なしで使う
+
+Xcode の ▶ で作られるのは動作確認用（Debug）です。手元で常用するなら
+Release で書き出して、アプリケーションフォルダに置くほうが軽くて速いです。
+
+```
+xattr -cr ~/Documents/weather-absolute-humidity
+
+cd ~/Documents/weather-absolute-humidity/apple
+rm -rf build
+xcodebuild -project WeatherAH.xcodeproj -scheme WeatherAH \
+  -configuration Release -destination 'platform=macOS' \
+  -derivedDataPath /tmp/weatherah-build -quiet build \
+  && echo "=== ビルド成功 ===" || echo "=== ビルド失敗 ==="
+```
+
+「ビルド成功」を確かめてから、置きます。
+
+```
+mkdir -p ~/Applications
+rm -rf ~/Applications/気温湿度.app
+cp -R /tmp/weatherah-build/Build/Products/Release/気温湿度.app ~/Applications/
+xattr -cr ~/Applications/気温湿度.app
+open ~/Applications
+```
+
+### なぜ `xattr -cr` と `/tmp` なのか
+
+**`xattr -cr`** … ファイルに拡張属性（Finder が付ける見えない付加情報）が
+付いていると、コード署名が
+`resource fork, Finder information, or similar detritus not allowed`
+と言って止まります。`~/Documents` は iCloud Drive の同期対象になっている
+ことが多く、同期の過程でこの属性が付きます。消してから作ります。
+
+**`/tmp` に作る** … ビルドの中間ファイルは大きいので、iCloud に同期される
+場所に置きたくありません。同じ理由で、上の属性も付きにくくなります。
+
+更新したくなったら、同じ手順をもう一度実行すれば置き換わります。
 
 ## iCloud 同期を入れる
 
