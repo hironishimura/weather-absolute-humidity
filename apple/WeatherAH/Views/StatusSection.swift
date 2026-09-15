@@ -38,7 +38,10 @@ struct StatusSection: View {
                 Image(systemName: settings.usingCloud ? "icloud.fill" : "iphone")
                 Text(settings.usingCloud
                      ? "登録した地点と色は iCloud で iPhone・iPad・Mac に行き来します。"
-                     : "iCloud が使えないため、この端末の中だけに保存しています。")
+                     : "登録した地点と色は、この端末の中だけに保存しています。"
+                     + "ほかの端末と行き来させるには、Xcode の Signing & Capabilities で"
+                     + "iCloud → Key-value storage を入れてください"
+                     + "（Apple Developer Program に入っている必要があります）。")
             }
             .font(.caption2)
             .foregroundStyle(.secondary)

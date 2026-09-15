@@ -80,8 +80,15 @@ public final class CloudBackend: SettingsBackend {
 
     public var onExternalChange: (() -> Void)?
 
-    /// iCloud にサインインしていて、権限もあるとき true
-    public var isCloud: Bool { FileManager.default.ubiquityIdentityToken != nil }
+    /// iCloud にサインインしていて、権限もあるとき true。
+    ///
+    /// サインインしているだけでは足りません。権限（iCloud → Key-value storage）が
+    /// 入っていないと、書いても黙って捨てられます。synchronize() は、その設定が
+    /// できていないときに false を返すので、ここで見ます。
+    /// これを見ないと「iCloudで同期しています」と出したまま同期しないことになります。
+    public var isCloud: Bool {
+        FileManager.default.ubiquityIdentityToken != nil && store.synchronize()
+    }
 
     public init(key: String = settingsStorageKey) {
         self.key = key
