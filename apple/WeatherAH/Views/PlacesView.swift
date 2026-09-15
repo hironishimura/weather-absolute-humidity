@@ -53,6 +53,21 @@ struct PlaceListView: View {
                         .buttonStyle(.borderless)
                         .foregroundStyle(.secondary)
                     }
+                    // Mac には横になぞる操作がないので、ここからも消せるようにします
+                    .contextMenu {
+                        Button {
+                            editing = place
+                        } label: {
+                            Label("この地点を編集", systemImage: "pencil")
+                        }
+                        if settings.places.count > 1 {
+                            Button(role: .destructive) {
+                                settings.remove(id: place.id)
+                            } label: {
+                                Label("この地点を削除", systemImage: "trash")
+                            }
+                        }
+                    }
                 }
                 .onDelete { offsets in
                     for i in offsets where settings.places.indices.contains(i) {
@@ -62,20 +77,32 @@ struct PlaceListView: View {
                 .onMove { from, to in
                     settings.move(from: from, to: to)
                 }
-            } footer: {
-                Label(settings.usingCloud ? "iCloud で同期しています" : "この端末の中だけに保存しています",
-                      systemImage: settings.usingCloud ? "icloud.fill" : "iphone")
-                    .font(.caption2)
             }
-        }
-        .toolbar {
-            ToolbarItem(placement: .primaryAction) {
+
+            Section {
                 Button {
                     addingNew = true
                 } label: {
-                    Label("地点を追加", systemImage: "plus")
+                    Label("地点を追加", systemImage: "plus.circle.fill")
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .contentShape(Rectangle())
                 }
+                .buttonStyle(.plain)
+                .foregroundStyle(Color.accentColor)
+            } footer: {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("地点を消すには、その行を右クリック"
+                         + "（iPhone・iPad では長押し）してください。"
+                         + "最後のひとつは残ります。")
+                    Label(settings.usingCloud
+                          ? "iCloud で同期しています"
+                          : "この端末の中だけに保存しています",
+                          systemImage: settings.usingCloud ? "icloud.fill" : "iphone")
+                }
+                .font(.caption2)
             }
+        }
+        .toolbar {
             #if os(iOS)
             ToolbarItem(placement: .topBarLeading) { EditButton() }
             #endif
