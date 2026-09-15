@@ -113,11 +113,12 @@ struct PlaceEditor: View {
         NavigationStack {
             Form {
                 Section("地名") {
-                    // 第1引数は「見出し」です。Mac では箱の左に並ぶので、
-                    // 長い例を渡すと箱が押しつぶされます。例は prompt に渡します。
-                    TextField("地名", text: $draft.label,
-                              prompt: Text("栃木県宇都宮市平出町"))
+                    // 記入例をここに渡してはいけません。Mac では見出しを隠すと
+                    // 記入例が見出しの位置（左）に繰り上がり、入力値と左右に並びます。
+                    // 例は下の説明文に書いてあります。
+                    TextField("地名", text: $draft.label)
                         .labelsHidden()
+                        .multilineTextAlignment(.leading)
                         .onSubmit { Task { await lookUp() } }
                     Button {
                         Task { await lookUp() }
@@ -150,8 +151,7 @@ struct PlaceEditor: View {
                 Section("場所") {
                     LabeledContent("緯度") {
                         TextField("緯度", value: $draft.lat,
-                                  format: .number.precision(.fractionLength(0...5)),
-                                  prompt: Text("36.5551"))
+                                  format: .number.precision(.fractionLength(0...5)))
                             .labelsHidden()
                             .multilineTextAlignment(.trailing)
                             #if os(iOS)
@@ -160,8 +160,7 @@ struct PlaceEditor: View {
                     }
                     LabeledContent("経度") {
                         TextField("経度", value: $draft.lon,
-                                  format: .number.precision(.fractionLength(0...5)),
-                                  prompt: Text("139.8828"))
+                                  format: .number.precision(.fractionLength(0...5)))
                             .labelsHidden()
                             .multilineTextAlignment(.trailing)
                             #if os(iOS)
@@ -180,7 +179,8 @@ struct PlaceEditor: View {
                     }
                 }
                 Section {
-                    Text("地名は住所のほうがよく見つかります（駅や施設の名前でも引けることがあります）。"
+                    Text("地名の例：栃木県宇都宮市平出町、宇都宮市平出工業団地、東京駅。"
+                         + "地名は住所のほうがよく見つかります（駅や施設の名前でも引けることがあります）。"
                          + "出どころは国土地理院の住所検索です。"
                          + "緯度・経度は地図アプリで長押しすると出てきます。"
                          + "気象庁と数値予報は、どこを入れてもそのまま動きます。"
