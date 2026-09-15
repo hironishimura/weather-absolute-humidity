@@ -16,8 +16,6 @@ struct RootView: View {
     #endif
 
     @State private var columns = NavigationSplitViewVisibility.automatic
-    @State private var editing: Place?
-    @State private var addingNew = false
     @State private var showColors = false
     @State private var showPlaces = false
 
@@ -26,19 +24,12 @@ struct RootView: View {
             .task(id: settings.active.id) {
                 await weather.refresh(place: settings.active)
             }
-            .sheet(item: $editing) { place in
-                PlaceEditor(place: place, isNew: false)
-            }
-            .sheet(isPresented: $addingNew) {
-                PlaceEditor(place: Place(label: "", lat: 35.6812, lon: 139.7671), isNew: true)
-            }
             .sheet(isPresented: $showColors) {
                 ColorSettingsView()
             }
             .sheet(isPresented: $showPlaces) {
                 NavigationStack {
-                    PlaceListView(editing: $editing, addingNew: $addingNew,
-                                  onSelect: { showPlaces = false })
+                    PlaceListView(onSelect: { showPlaces = false })
                         .navigationTitle("地点")
                         .toolbar {
                             ToolbarItem(placement: .confirmationAction) {
@@ -67,7 +58,7 @@ struct RootView: View {
 
     private var splitView: some View {
         NavigationSplitView(columnVisibility: $columns) {
-            PlaceListView(editing: $editing, addingNew: $addingNew, onSelect: nil)
+            PlaceListView(onSelect: nil)
                 .navigationTitle("地点")
         } detail: {
             DetailView(showColors: $showColors, showPlaces: $showPlaces, compact: false)

@@ -8,10 +8,14 @@ import WeatherCore
 
 struct PlaceListView: View {
     @Environment(SettingsStore.self) private var settings
-    @Binding var editing: Place?
-    @Binding var addingNew: Bool
     /// iPhone では選んだら閉じます
     var onSelect: (() -> Void)?
+
+    // 編集画面はこの一覧が自分で開きます。
+    // iPhone では一覧じたいがシートの中に出るので、外側から開こうとすると
+    // 「シートの上にシート」になり、何も出てきません。
+    @State private var editing: Place?
+    @State private var addingNew = false
 
     var body: some View {
         List {
@@ -76,6 +80,12 @@ struct PlaceListView: View {
             ToolbarItem(placement: .topBarLeading) { EditButton() }
             #endif
         }
+        .sheet(item: $editing) { place in
+            PlaceEditor(place: place, isNew: false)
+        }
+        .sheet(isPresented: $addingNew) {
+            PlaceEditor(place: Place(label: "", lat: 35.6812, lon: 139.7671), isNew: true)
+        }
     }
 }
 
@@ -111,7 +121,7 @@ struct PlaceEditor: View {
                         Label(searching ? "探しています…" : "地名から緯度経度を入れる",
                               systemImage: "magnifyingglass")
                     }
-                    .disabled(searching || Geocoder.normalize(draft.label).isEmpty)
+                    .disabled(searching)
 
                     if let geoMessage {
                         Text(geoMessage).font(.caption).foregroundStyle(.secondary)
@@ -204,7 +214,12 @@ struct PlaceEditor: View {
     /// 押されたときだけ問い合わせます（1文字ごとに投げると相手に負担がかかります）。
     private func lookUp() async {
         let q = draft.label
-        guard !Geocoder.normalize(q).isEmpty, !searching else { return }
+        guard !searching else { return }
+        guard !Geocoder.normalize(q).isEmpty else {
+            candidates = []
+            geoMessage = "地名を入れてください"
+            return
+        }
         searching = true
         candidates = []
         geoMessage = "探しています…"
