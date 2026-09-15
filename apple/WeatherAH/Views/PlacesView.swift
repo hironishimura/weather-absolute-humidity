@@ -113,7 +113,11 @@ struct PlaceEditor: View {
         NavigationStack {
             Form {
                 Section("地名") {
-                    TextField("栃木県宇都宮市平出町", text: $draft.label)
+                    // 第1引数は「見出し」です。Mac では箱の左に並ぶので、
+                    // 長い例を渡すと箱が押しつぶされます。例は prompt に渡します。
+                    TextField("地名", text: $draft.label,
+                              prompt: Text("栃木県宇都宮市平出町"))
+                        .labelsHidden()
                         .onSubmit { Task { await lookUp() } }
                     Button {
                         Task { await lookUp() }
@@ -137,20 +141,28 @@ struct PlaceEditor: View {
                                 Text(String(format: "%.4f° N, %.4f° E", c.lat, c.lon))
                                     .font(.caption2).foregroundStyle(.secondary)
                             }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
                     }
                 }
                 Section("場所") {
                     LabeledContent("緯度") {
-                        TextField("36.5551", value: $draft.lat, format: .number.precision(.fractionLength(0...5)))
+                        TextField("緯度", value: $draft.lat,
+                                  format: .number.precision(.fractionLength(0...5)),
+                                  prompt: Text("36.5551"))
+                            .labelsHidden()
                             .multilineTextAlignment(.trailing)
                             #if os(iOS)
                             .keyboardType(.numbersAndPunctuation)
                             #endif
                     }
                     LabeledContent("経度") {
-                        TextField("139.8828", value: $draft.lon, format: .number.precision(.fractionLength(0...5)))
+                        TextField("経度", value: $draft.lon,
+                                  format: .number.precision(.fractionLength(0...5)),
+                                  prompt: Text("139.8828"))
+                            .labelsHidden()
                             .multilineTextAlignment(.trailing)
                             #if os(iOS)
                             .keyboardType(.numbersAndPunctuation)
