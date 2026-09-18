@@ -1,5 +1,5 @@
 {
-  "updated_at": "2026-09-18T20:04:17.147040+09:00",
+  "updated_at": "2026-09-19T01:19:12.372536+09:00",
   "rain_mm": 1.0,
   "say_rain": 50.0,
   "places": [
@@ -10,18 +10,6 @@
       "lon": 139.8828,
       "station": "宇都宮",
       "periods": [
-        {
-          "start": "2026-09-11T00:00:00+09:00",
-          "hours": 24,
-          "mm": 23.5,
-          "rain": true,
-          "pops": {
-            "jma": 80.0,
-            "model": 98.0,
-            "yahoo": 90.0,
-            "weathernews": 90.0
-          }
-        },
         {
           "start": "2026-09-12T00:00:00+09:00",
           "hours": 24,
@@ -60,24 +48,12 @@
         },
         {
           "start": "2026-09-15T00:00:00+09:00",
-          "hours": 12,
-          "mm": 3.0,
+          "hours": 24,
+          "mm": 5.0,
           "rain": true,
           "pops": {
             "jma": 80.0,
             "model": 94.0,
-            "yahoo": 80.0,
-            "weathernews": 80.0
-          }
-        },
-        {
-          "start": "2026-09-15T12:00:00+09:00",
-          "hours": 12,
-          "mm": 2.0,
-          "rain": true,
-          "pops": {
-            "jma": 80.0,
-            "model": 92.0,
             "yahoo": 80.0,
             "weathernews": 90.0
           }
@@ -141,32 +117,44 @@
             "yahoo": 50.0,
             "weathernews": 40.0
           }
+        },
+        {
+          "start": "2026-09-18T12:00:00+09:00",
+          "hours": 12,
+          "mm": 0.0,
+          "rain": false,
+          "pops": {
+            "jma": 30.0,
+            "model": 6.0,
+            "yahoo": 50.0,
+            "weathernews": 40.0
+          }
         }
       ],
       "scores": {
         "jma": {
-          "n": 11,
-          "hit": 10,
-          "rate": 90.9,
-          "brier": 0.111
+          "n": 10,
+          "hit": 9,
+          "rate": 90.0,
+          "brier": 0.123
         },
         "model": {
-          "n": 11,
-          "hit": 10,
-          "rate": 90.9,
-          "brier": 0.056
+          "n": 10,
+          "hit": 9,
+          "rate": 90.0,
+          "brier": 0.061
         },
         "yahoo": {
-          "n": 11,
-          "hit": 8,
-          "rate": 72.7,
-          "brier": 0.137
+          "n": 10,
+          "hit": 6,
+          "rate": 60.0,
+          "brier": 0.171
         },
         "weathernews": {
-          "n": 11,
-          "hit": 10,
-          "rate": 90.9,
-          "brier": 0.118
+          "n": 10,
+          "hit": 9,
+          "rate": 90.0,
+          "brier": 0.141
         }
       }
     }
@@ -266,6 +254,14 @@
         "rain": false
       },
       "2026-09-18T00:00:00+09:00|12": {
+        "mm": 0.0,
+        "rain": false
+      },
+      "2026-09-15T00:00:00+09:00|24": {
+        "mm": 5.0,
+        "rain": true
+      },
+      "2026-09-18T12:00:00+09:00|12": {
         "mm": 0.0,
         "rain": false
       }
