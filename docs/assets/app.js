@@ -383,7 +383,7 @@ var state = {
   overview: '',
   officeName: '',
   status: [],
-  chartDays: 2,
+  chartDays: 3,   /* 最初に出す日数。index.html の is-on と合わせること */
   surface: 10,
   accuracy: null,     /* 降水確率の当たり具合（accuracy.json） */
   colors: {}          /* 提供元ごとの色（変えたものだけ） */
@@ -2278,7 +2278,7 @@ function init() {
       Array.prototype.forEach.call(document.querySelectorAll('.seg__btn'), function (o) {
         o.classList.toggle('is-on', o === b);
       });
-      state.chartDays = parseInt(b.getAttribute('data-days'), 10) || 2;
+      state.chartDays = parseInt(b.getAttribute('data-days'), 10) || 3;
       renderChart();
     });
   });

@@ -12,7 +12,8 @@ struct ChartsSection: View {
     @Environment(WeatherStore.self) private var weather
     @Binding var showColors: Bool
 
-    @State private var days = 2
+    /// 最初に出す日数。Web版（app.js の chartDays）と合わせています
+    @State private var days = 3
 
     private let ranges = [1, 2, 3, 7]
 
