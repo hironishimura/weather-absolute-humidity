@@ -960,7 +960,7 @@ function renderAccuracy() {
   if (!acc) {
     $('acc-lead').textContent = 'まだ集計ファイルがありません。';
     $('acc-note').textContent =
-      'scripts/verify.py（GitHub Actions の取り込みに入っています）が動くと ' +
+      'scripts/verify.py（サーバの取り込みに入っています）が動くと ' +
       'data/accuracy.json ができ、ここに数字が出ます。';
     body.appendChild(emptyRow(6, '—'));
     return;

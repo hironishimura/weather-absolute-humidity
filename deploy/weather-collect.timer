@@ -1,0 +1,14 @@
+[Unit]
+Description=気温・湿度・絶対湿度 の取り込み(3時間おき)
+
+[Timer]
+# GitHub Actions のときと同じ間隔です。
+# Yahoo!天気の表が3時間刻みなのに合わせています。
+OnCalendar=*-*-* 00/3:05:00
+# サーバーを止めていて回を飛ばしたら、起きたときに1回だけ追いかけます
+Persistent=true
+# 毎回きっかり同じ時刻に取りに行かないよう少しずらします
+RandomizedDelaySec=90
+
+[Install]
+WantedBy=timers.target

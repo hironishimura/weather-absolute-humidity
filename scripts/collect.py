@@ -2,11 +2,11 @@
 """Yahoo!天気とウェザーニュースから気温・湿度を取り込む。
 
 どちらも公開APIがなく、ブラウザから直接読むことはできない（CORS）。
-そこでサーバ側（GitHub Actions など）でページを取得し、
+そこでサーバ側（VPS の weather-collect が3時間おき）でページを取得し、
 docs/data/latest.json に書き出しておく。
 アプリはそのファイルを読んで、気象庁の値と並べて表示する。
 
-外部ライブラリは使わない（GitHub Actions でそのまま動かすため）。
+外部ライブラリは使わない（どのサーバでもそのまま動かせるように）。
 
     python3 scripts/collect.py --dry-run          # 書き出さず中身だけ確認
     python3 scripts/collect.py                    # latest.json を書き出す

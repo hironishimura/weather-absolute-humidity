@@ -1,6 +1,6 @@
 //  取得まわり
 //
-//  取りに行く先は気象庁・Open-Meteo・GitHub Pages（取り込みファイル）の3つだけです。
+//  取りに行く先は気象庁・Open-Meteo・自前のサーバ（取り込みファイル）の3つだけです。
 
 import Foundation
 
@@ -78,13 +78,12 @@ extension Fetching {
 public enum Endpoints {
     public static let jma = "https://www.jma.go.jp/bosai"
     public static let openMeteo = "https://api.open-meteo.com/v1/forecast"
-    /// GitHub Actions が書き出している取り込みファイルの置き場所。
+    /// VPS(Xserver VPS クラウド)が3時間おきに書き出している取り込みファイルの置き場所。
     ///
-    /// GitHub Pages はリポジトリの根元を公開していて、アプリ本体は docs/ の下にあります。
-    /// 公開の設定を docs/ 直下に変えても届くよう、上から順に試します。
+    /// Caddy が /opt/weather-ah/docs をそのまま配っているので、
+    /// 画面(index.html)から見た ./data/ と同じものがここに出ます。
     public static let snapshotBases = [
-        "https://hironishimura.github.io/weather-absolute-humidity/docs/data",
-        "https://hironishimura.github.io/weather-absolute-humidity/data",
+        "https://weather.shome.co.jp/data",
     ]
 
     /// 取り込みファイルの置き場所を順に並べた URL

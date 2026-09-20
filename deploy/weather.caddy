@@ -1,0 +1,26 @@
+# 気温・湿度・絶対湿度 の公開設定
+# ・HTTPS(Let's Encrypt)を自動取得
+# ・ビルドのいらない静的ファイルなので docs/ をそのまま配ります
+#
+# 置き場所: /etc/caddy/conf.d/weather.caddy
+#   /etc/caddy/Caddyfile の import から読まれます(setup_vps.sh が面倒を見ます)。
+#   土地サーチと同じサーバーに相乗りしているため、
+#   /etc/caddy/Caddyfile そのものは書き換えません。
+
+weather.shome.co.jp {
+	encode gzip
+	root * /opt/weather-ah/docs
+	file_server
+
+	# 取り込んだ値は3時間おきに変わるので、毎回取りに行かせます
+	@data path /data/*
+	header @data Cache-Control "no-store"
+
+	# 画面本体。中の ?v=… を見てもらう必要があるので持たせません
+	@html path / /index.html
+	header @html Cache-Control "no-cache"
+
+	# CSS・JavaScript は中身が変わると ?v=… も変わるので長めに持たせます
+	@assets path /assets/*
+	header @assets Cache-Control "public, max-age=604800"
+}

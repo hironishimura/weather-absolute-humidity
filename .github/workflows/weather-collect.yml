@@ -11,6 +11,14 @@ name: 気象データの取り込み
 # 【地点を変えるとき】
 #   scripts/settings.json の url を自分の地域のページのURLに直してください。
 #   読めなくなったら scripts/probe.py（ページの作りを調べる）が役に立ちます。
+#
+# 【いまは自動では動きません】
+#   ふだんの取り込みは Xserver VPS クラウド（https://weather.shome.co.jp）の
+#   systemd タイマー weather-collect.timer が3時間おきに行っています。
+#   ここで書き出しても VPS 側には届かないので、定期実行は止めてあります。
+#   読み取りが効くかどうかを手元で試したいときだけ、手動で動かしてください。
+#   （その場合は「書き出さずに中身だけ確認する」を on にするのが安全です）
+#   戻すときは下の schedule と push のコメントを外します。
 
 
 on:
@@ -20,13 +28,14 @@ on:
         description: '書き出さずに中身だけ確認する'
         type: boolean
         default: false
-  schedule:
-    - cron: '5 */3 * * *'   # 3時間おき（Yahoo!天気の表が3時間刻みなのに合わせています）
-  push:
-    branches: [main]
-    paths:
-      - 'scripts/**'
-      - '.github/workflows/weather-collect.yml'
+  # VPS に移したので止めています
+  # schedule:
+  #   - cron: '5 */3 * * *'   # 3時間おき（Yahoo!天気の表が3時間刻みなのに合わせています）
+  # push:
+  #   branches: [main]
+  #   paths:
+  #     - 'scripts/**'
+  #     - '.github/workflows/weather-collect.yml'
 
 concurrency:
   group: weather-collect

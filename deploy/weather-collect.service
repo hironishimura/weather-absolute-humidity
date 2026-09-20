@@ -1,0 +1,36 @@
+[Unit]
+Description=気温・湿度・絶対湿度 の取り込み
+Documentation=https://weather.shome.co.jp
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=weather
+Group=weather
+WorkingDirectory=/opt/weather-ah
+# Playwright のブラウザ置き場。weather はログインできない利用者なので、
+# ホームではなくアプリの下に置きます。
+Environment=HOME=/opt/weather-ah
+Environment=PLAYWRIGHT_BROWSERS_PATH=/opt/weather-ah/.playwright
+
+# 1. ページから取り込んで docs/data/latest.json に書く
+ExecStart=/opt/weather-ah/venv/bin/python3 scripts/collect.py
+
+# 2. ブラウザでしか読めないぶんを足す(失敗しても 1. の結果は残す)
+ExecStart=-/opt/weather-ah/venv/bin/python3 scripts/collect_browser.py
+
+# 3. 降水確率の当たり具合を数える(同じく、こけても止めない)
+ExecStart=-/opt/weather-ah/venv/bin/python3 scripts/verify.py
+
+TimeoutStartSec=20min
+
+# 書き込むのは自分の置き場だけ
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/weather-ah
+
+[Install]
+WantedBy=multi-user.target

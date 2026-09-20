@@ -3,7 +3,7 @@
 現在地の気温・相対湿度・**絶対湿度**を、実況と予報で表示するアプリです。
 ビルド不要の静的ファイル（HTML／CSS／JavaScript）だけでできています。
 
-**https://hironishimura.github.io/weather-absolute-humidity/**
+**https://weather.shome.co.jp**
 
 相対湿度だけでは空気の乾き具合が分かりにくいため、
 重量絶対湿度（g/kg(DA)）を主役に据えています。空気線図と同じ量で、暖めても冷やしても値が変わらないため、
@@ -84,6 +84,60 @@ python3 -m http.server 8080 --directory docs
 
 現在地の取得（Geolocation）は **https か localhost** でしか動きません。
 
+## 置き場所（サーバ）
+
+**Xserver VPS クラウド（Ubuntu 24.04）** で動いています。
+土地サーチ（`https://tochi.shome.co.jp`）と**同じサーバーに相乗り**していて、
+向こうの設定には触らない作りにしてあります。
+
+| 項目 | 内容 |
+|---|---|
+| 公開URL | `https://weather.shome.co.jp` |
+| アプリ配置 | `/opt/weather-ah`（実行ユーザー `weather`）|
+| 配信 | Caddy が `/opt/weather-ah/docs` をそのまま配る（ビルドなし）|
+| HTTPS | Caddy（Let's Encrypt 自動更新）|
+| 取り込み | systemd タイマー `weather-collect.timer`（3時間おき）|
+| ログ | `journalctl -u weather-collect -f` |
+| ファイアウォール | ufw: 22 / 80 / 443 のみ（土地サーチ側で設定済み）|
+| SSH | 鍵認証のみ（パスワード不可）。緊急時は Xserver 管理画面のコンソール |
+| バックアップ | Xserver VPS クラウド標準の日次バックアップ（7日分）|
+| DNS | `shome.co.jp` の DNS（Xserver レンタルサーバー側）に `weather` の A レコード |
+
+Caddy の設定は、土地サーチの `Caddyfile` を書き換えずに済むよう
+`/etc/caddy/conf.d/weather.caddy` に置いて `import` させています。
+
+コードを直したあとの反映（Mac から）:
+
+```bash
+bash deploy/update_vps.sh
+```
+
+**初回の構築**は次の順に行います。
+
+1. Xserver の DNS に `weather` の A レコード（`153.115.38.1`）を足す
+2. `bash deploy/update_vps.sh --setup`
+   — 送ったうえで、VPS 上の `deploy/setup_vps.sh` が
+   利用者の作成・Python と Playwright の用意・systemd 登録・Caddy 設定まで行います
+3. `https://weather.shome.co.jp` を開いて確かめる
+
+取り込みをすぐ動かしたいとき:
+
+```bash
+ssh root@153.115.38.1 'systemctl start weather-collect.service'
+ssh root@153.115.38.1 'journalctl -u weather-collect -n 50 --no-pager'
+```
+
+`docs/data/*.json`（取り込んだ値・予報の書きため・当たり具合）は**サーバ側のものが正**で、
+`update_vps.sh` は上書きしません。手元のものは開発用の控えです。
+
+### GitHub はどうなっているか
+
+取り込みは VPS に移したので、**GitHub Actions の定期実行は止めてあります**
+（`.github/workflows/weather-collect.yml` の `schedule` をコメントにしてあります。
+手動実行だけ残していて、読み取りが効くかの確認に使えます）。
+GitHub Pages も公開を止めてください（リポジトリの Settings → Pages → Source を None）。
+コードの置き場所としての GitHub はそのまま使います。
+
 ## 中身
 
 ```
@@ -91,11 +145,12 @@ apple/         iPhone・iPad・Mac のアプリ（SwiftUI）
   WeatherAH.xcodeproj
   WeatherAH/   画面
   WeatherCore/ 計算と取得（単体テスト付き）
-docs/          アプリ本体。GitHub Pages が公開しているのはここです
+docs/          アプリ本体。サーバ（Caddy）が配っているのはここです
   index.html
   assets/      app.css / app.js
   data/        latest.json（取り込んだ値）
                history.json（予報の書きため）／accuracy.json（当たり具合）
+deploy/        サーバへ置くための設定一式（Caddy・systemd・反映スクリプト）
 dist/          1ファイルにまとめた版
 scripts/       取り込みと1ファイル化のスクリプト
 test/          計算と読み取りの確認
@@ -144,7 +199,7 @@ APIキーなしで、ブラウザから直接読める形（CORS対応）で提�
 ### Yahoo!天気とウェザーニュースの取り方
 
 どちらも一般に公開されたAPIがなく、**ブラウザから直接は読めません**（CORSで止まります）。
-そこで GitHub Actions が3時間おきにページを取得し、読み取った値を
+そこでサーバ（Xserver VPS クラウド）が3時間おきにページを取得し、読み取った値を
 `docs/data/latest.json` に書き出しています。アプリはそのファイルを読みます。
 
 ページから取れるものには差があります。
@@ -186,7 +241,7 @@ python3 scripts/collect_browser.py          # latest.json に足す
 **外し方**は次のどちらでも構いません。どちらも `collect.py` だけの動きに戻ります。
 
 - `scripts/settings.json` の `sources.<名前>.browser.enabled` を `false` にする
-- `.github/workflows/weather-collect.yml` の「ブラウザで取り込む」ステップを消す
+- `deploy/weather-collect.service` の `collect_browser.py` の行を消す
 
 この仕組みは**読めたぶんだけ足す**作りです。失敗しても `latest.json` は壊れませんし、
 Playwright が入っていない環境では何もせずに正常終了します。ページの作りが変わって
@@ -244,8 +299,9 @@ python3 scripts/probe.py --tables "https://…"
 python3 scripts/probe.py --around "https://…" --pattern "湿度"
 ```
 
-取り込みの間隔を変えるときは `.github/workflows/weather-collect.yml` の
-`schedule` を直してください。止めたい場合は各地点の `enabled` を `false` にします。
+取り込みの間隔を変えるときは `deploy/weather-collect.timer` の `OnCalendar` を直して、
+`bash deploy/update_vps.sh` で反映してください（下の「置き場所（サーバ）」を参照）。
+止めたい場合は各地点の `enabled` を `false` にします。
 
 ## 降水確率の当たり具合
 
