@@ -89,3 +89,86 @@ jobs:
           git commit -m "更新: 気温・湿度の取り込みデータ"
           git pull --rebase --autostash
           git push
+
+      - name: Xserver へ送る
+        # 【なぜ必要か】
+        # アプリは data/latest.json を相対パスで読みます。
+        # GitHub Pages ではリポジトリの中身がそのまま配信されるので、上の
+        # コミットだけで公開側も新しくなりました。Xserver VPS では配信元が
+        # 別なので、同じ3つをサーバーにも置かないと表示が止まります。
+        # 気象庁・MSM/GSM・ECMWF はアプリが直接読むため影響を受けませんが、
+        # Yahoo!天気・ウェザーニュース・降水確率の当たり具合は止まります。
+        #
+        # 【毎回送る理由】
+        # 中身が変わっていなくても送ります。1回あたり90KB ほどですし、
+        # 前回の送信に失敗していても次の回で勝手に直るためです。
+        #
+        # 【置き場所】
+        # XSERVER_DATA_PATH は、docs/ を置いた公開ディレクトリの下の data/ です。
+        # 例）公開ディレクトリが /var/www/weather なら /var/www/weather/data
+        #
+        # 【設定】
+        #   Settings → Secrets and variables → Actions
+        #     Variables : XSERVER_HOST / XSERVER_USER / XSERVER_DATA_PATH
+        #                 XSERVER_KNOWN_HOSTS（`ssh-keyscan -H <ホスト>` の出力）
+        #     Secrets   : XSERVER_SSH_KEY（秘密鍵の中身をそのまま）
+        #   変数と秘密を分けているのは、ログで隠されない値は変数にしたほうが
+        #   うまくいかないときに原因を追いやすいためです。
+        if: inputs.dry-run != true
+        env:
+          XS_HOST:  ${{ vars.XSERVER_HOST }}
+          XS_USER:  ${{ vars.XSERVER_USER }}
+          XS_PATH:  ${{ vars.XSERVER_DATA_PATH }}
+          XS_HOSTKEY: ${{ vars.XSERVER_KNOWN_HOSTS }}
+          XS_KEY:   ${{ secrets.XSERVER_SSH_KEY }}
+        run: |
+          set -euo pipefail
+
+          # まだ設定していないうちは、ここだけ飛ばします。
+          # 4つとも空のときに限ります。half設定は事故なので下で止めます。
+          if [ -z "$XS_HOST" ] && [ -z "$XS_USER" ] && [ -z "$XS_PATH" ] && [ -z "$XS_KEY" ]; then
+            echo "::notice::Xserver の設定がまだありません。送信を飛ばしました。"
+            exit 0
+          fi
+
+          missing=""
+          if [ -z "$XS_HOST" ]; then missing="$missing XSERVER_HOST(変数)"; fi
+          if [ -z "$XS_USER" ]; then missing="$missing XSERVER_USER(変数)"; fi
+          if [ -z "$XS_PATH" ]; then missing="$missing XSERVER_DATA_PATH(変数)"; fi
+          if [ -z "$XS_KEY"  ]; then missing="$missing XSERVER_SSH_KEY(秘密)"; fi
+          if [ -n "$missing" ]; then
+            echo "::error::設定が足りません：$missing"
+            exit 1
+          fi
+
+          mkdir -p ~/.ssh
+          printf '%s\n' "$XS_KEY" > ~/.ssh/id_xserver
+          chmod 600 ~/.ssh/id_xserver
+
+          # 相手が本物か確かめます。登録した鍵があればそれを使います。
+          # 無いときはその場で取りにいきますが、初回だけ相手を信用することに
+          # なるので、ssh-keyscan の結果を変数に入れておくほうが安全です。
+          if [ -n "$XS_HOSTKEY" ]; then
+            printf '%s\n' "$XS_HOSTKEY" > ~/.ssh/known_hosts
+          else
+            echo "::warning::XSERVER_KNOWN_HOSTS が未設定です。" \
+                 "ssh-keyscan -H でホスト鍵を取り、変数に入れるとなりすましを防げます。"
+            ssh-keyscan -H "$XS_HOST" > ~/.ssh/known_hosts 2>/dev/null
+          fi
+          chmod 600 ~/.ssh/known_hosts
+
+          OPTS="-i $HOME/.ssh/id_xserver -o IdentitiesOnly=yes"
+          OPTS="$OPTS -o StrictHostKeyChecking=yes -o UserKnownHostsFile=$HOME/.ssh/known_hosts"
+          WHERE="$XS_USER@$XS_HOST"
+
+          ssh $OPTS "$WHERE" "mkdir -p '$XS_PATH'"
+
+          # いったん別名で置いてから、同じ場所で名前を付け替えます。
+          # 直接上書きすると、書いている途中のファイルをブラウザが読んで
+          # 「壊れたJSON」になることがあるためです。付け替えは一瞬で終わります。
+          for f in latest.json history.json accuracy.json; do
+            scp $OPTS "docs/data/$f" "$WHERE:$XS_PATH/.$f.tmp"
+            ssh $OPTS "$WHERE" \
+              "chmod 644 '$XS_PATH/.$f.tmp' && mv -f '$XS_PATH/.$f.tmp' '$XS_PATH/$f'"
+            echo "送りました： $f"
+          done
