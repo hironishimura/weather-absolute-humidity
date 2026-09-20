@@ -7,3 +7,6 @@ apple/build/
 *.xcuserdatad
 xcuserdata/
 DerivedData/
+
+# swift test が作るもの（apple/WeatherCore/.build）
+.build/
