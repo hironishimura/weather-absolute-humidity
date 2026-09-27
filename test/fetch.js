@@ -52,7 +52,8 @@ const meteo = {
     temperature_2m: [24.1, 24.6, 25.0, null],
     relative_humidity_2m: [68, 66, 63, 60],
     surface_pressure: [1001.8, 1001.5, 1001.2, 1001.0],
-    precipitation: [0, 1.2, 3.4, 0]
+    precipitation: [0, 1.2, 3.4, 0],
+    shortwave_radiation: [412, 355, 190, 20]
   }
 };
 /* 降水確率はモデルを指定しない問い合わせで返ってくる */
@@ -139,6 +140,16 @@ ctx.loadAmedas(place).then(function (hit) {
                       || u.indexOf('models=jma_seamless') >= 0 && /hourly=[^&]*,precipitation(&|$)/.test(u)),
      requested.join('\n     '));
   ok('雨量が予報に入る', f[2].precip === 3.4, f.map(r => r.precip).join(','));
+  /* 日射量も同じ問い合わせで返ります。気象庁のアメダスは日照時間しか測って
+     いないので、ここを頼み忘れると日射量のグラフがまるごと消えます */
+  ok('日射量もモデル指定つきで要求する',
+     requested.some(u => u.indexOf('models=jma_seamless') >= 0
+                      && u.indexOf('shortwave_radiation') >= 0),
+     requested.join('\n     '));
+  ok('日射量が予報に入る', f[0].solar === 412 && f[2].solar === 190,
+     f.map(r => r.solar).join(','));
+  ok('実況（アメダス）に日射量は入らない',
+     ctx.state.past.every(function (r) { return r.solar === undefined; }));
 
   console.log('\n■ 取り込みファイル');
   return ctx.loadSnapshot();

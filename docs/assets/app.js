@@ -700,7 +700,7 @@ function loadModel(place, key, models) {
   function url(withModel) {
     var q = '?latitude=' + place.lat.toFixed(4) +
       '&longitude=' + place.lon.toFixed(4) +
-      '&hourly=temperature_2m,relative_humidity_2m,surface_pressure,precipitation' +
+      '&hourly=temperature_2m,relative_humidity_2m,surface_pressure,precipitation,shortwave_radiation' +
       '&current=temperature_2m,relative_humidity_2m,surface_pressure' +
       '&timezone=Asia%2FTokyo&forecast_days=10&past_days=1';
     return OPEN_METEO + q + (withModel ? '&models=' + models : '');
@@ -739,6 +739,9 @@ function loadModel(place, key, models) {
           var p = h.surface_pressure ? h.surface_pressure[i] : null;
           var pop = pops[h.time[i]];
           var mm = h.precipitation ? h.precipitation[i] : null;
+          /* 全天日射量［W/m²］。水平面が1時間に受けた日射の平均です。
+             気象庁のアメダスは日照時間しか測っていないため、実況はありません。 */
+          var sr = h.shortwave_radiation ? h.shortwave_radiation[i] : null;
           if (!isNum(t) || !isNum(rh)) { continue; }
           rows.push({
             time: new Date(h.time[i] + ':00+09:00'),
@@ -747,7 +750,8 @@ function loadModel(place, key, models) {
             vh: volumetricHumidity(t, rh),
             mr: mixingRatio(t, rh, isNum(p) ? p : undefined),
             pop: isNum(pop) ? pop : undefined,
-            precip: isNum(mm) ? mm : undefined
+            precip: isNum(mm) ? mm : undefined,
+            solar: isNum(sr) ? sr : undefined
           });
         }
       }
@@ -1598,7 +1602,9 @@ function renderChart() {
     { title: '絶対湿度', unit: 'g/kg(DA)', key: 'mr', digits: 1 },
     { title: '降水確率', unit: '%', key: 'pop', digits: 0, range: [0, 100] },
     { title: '雨量', unit: 'mm/h', key: 'precip', digits: 1, dots: true, fromZero: true,
-      emptyText: 'この期間、雨の予報はありません' }
+      emptyText: 'この期間、雨の予報はありません' },
+    { title: '日射量', unit: 'W/m²', key: 'solar', digits: 0, fromZero: true,
+      emptyText: '日射量を出せる提供元がありません' }
   ].forEach(function (c) {
     var hadValues = false;
     var series = [];

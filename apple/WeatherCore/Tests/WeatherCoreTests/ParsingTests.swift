@@ -275,3 +275,45 @@ final class 取り込みファイルの置き場所: XCTestCase {
         }
     }
 }
+
+final class 日射量: XCTestCase {
+
+    /// 頼み忘れると日射量のグラフがまるごと消えるので、URL を見ます
+    func test_問い合わせに日射量を入れている() {
+        let c = OpenMeteoClient(fetcher: URLSessionFetcher())
+        let url = c.valuesURL(.宇都宮, withModel: true)
+        XCTAssertTrue(url.absoluteString.contains("shortwave_radiation"), url.absoluteString)
+        XCTAssertTrue(url.absoluteString.contains("models=jma_seamless"))
+    }
+
+    func test_日射量が予報の行に入る() {
+        let payload = try! JSONDecoder().decode(
+            OpenMeteoClient.Payload.self,
+            from: Data("""
+            {"hourly":{"time":["2026-09-27T12:00","2026-09-27T13:00"],
+             "temperature_2m":[24.1,24.6],"relative_humidity_2m":[68,66],
+             "shortwave_radiation":[398.0,412.5]}}
+            """.utf8))
+        let rows = OpenMeteoClient.build(values: payload, pops: nil).rows
+        XCTAssertEqual(rows.count, 2)
+        XCTAssertEqual(rows.first?.solar ?? 0, 398.0, accuracy: 1e-9)
+        XCTAssertEqual(rows.last?.solar ?? 0, 412.5, accuracy: 1e-9)
+    }
+
+    /// アメダスは日照時間しか測っていません。実況に日射量は入りません
+    func test_実況には日射量が入らない() {
+        let row = HourlyRow.make(time: Date(), temp: 20, rh: 60, pressure: 1010)
+        XCTAssertNil(row?.solar)
+    }
+
+    func test_グラフの項目として出せる() {
+        XCTAssertTrue(ChartField.allCases.contains(.solar))
+        XCTAssertEqual(ChartField.solar.unit, "W/m²")
+        XCTAssertEqual(ChartField.solar.digits, 0)
+        // 夜は0。軸が0から始まらないと、夜の平らな線が浮いて見えます
+        XCTAssertTrue(ChartField.solar.startsAtZero)
+        var row = HourlyRow(time: Date())
+        row.solar = 350
+        XCTAssertEqual(ChartField.solar.value(row) ?? 0, 350, accuracy: 1e-9)
+    }
+}

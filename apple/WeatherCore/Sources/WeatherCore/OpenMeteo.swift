@@ -31,6 +31,7 @@ public struct OpenMeteoClient: Sendable {
             var surface_pressure: [Double?]?
             var precipitation_probability: [Double?]?
             var precipitation: [Double?]?
+            var shortwave_radiation: [Double?]?
         }
         var current: Current?
         var hourly: Hourly?
@@ -40,6 +41,7 @@ public struct OpenMeteoClient: Sendable {
         var s = "\(Endpoints.openMeteo)?latitude=\(String(format: "%.4f", place.lat))"
             + "&longitude=\(String(format: "%.4f", place.lon))"
             + "&hourly=temperature_2m,relative_humidity_2m,surface_pressure,precipitation"
+            + ",shortwave_radiation"
             + "&current=temperature_2m,relative_humidity_2m,surface_pressure"
             + "&timezone=Asia%2FTokyo&forecast_days=10&past_days=1"
         if withModel { s += "&models=" + models }
@@ -95,7 +97,8 @@ public struct OpenMeteoClient: Sendable {
                 if let row = HourlyRow.make(time: time, temp: t, rh: rh,
                                             pressure: pick(h.surface_pressure),
                                             pop: popByTime[text],
-                                            precip: pick(h.precipitation)) {
+                                            precip: pick(h.precipitation),
+                                            solar: pick(h.shortwave_radiation)) {
                     rows.append(row)
                 }
             }

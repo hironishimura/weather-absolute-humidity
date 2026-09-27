@@ -357,7 +357,7 @@ public enum ChartWindow {
 }
 
 public enum ChartField: String, CaseIterable, Sendable, Identifiable {
-    case temp, rh, ah, pop, precip
+    case temp, rh, ah, pop, precip, solar
 
     public var id: String { rawValue }
 
@@ -368,6 +368,7 @@ public enum ChartField: String, CaseIterable, Sendable, Identifiable {
         case .ah: return "絶対湿度"
         case .pop: return "降水確率"
         case .precip: return "雨量"
+        case .solar: return "日射量"
         }
     }
     public var unit: String {
@@ -377,12 +378,14 @@ public enum ChartField: String, CaseIterable, Sendable, Identifiable {
         case .ah: return "g/kg(DA)"
         case .pop: return "%"
         case .precip: return "mm/h"
+        // 水平面が1時間に受けた日射の平均
+        case .solar: return "W/m²"
         }
     }
     public var digits: Int {
         switch self {
         case .temp, .ah, .precip: return 1
-        case .rh, .pop: return 0
+        case .rh, .pop, .solar: return 0
         }
     }
     public var fixedRange: ClosedRange<Double>? { self == .pop ? 0...100 : nil }
@@ -397,7 +400,7 @@ public enum ChartField: String, CaseIterable, Sendable, Identifiable {
         }
     }
     /// 0を下回らない項目
-    public var startsAtZero: Bool { self == .pop || self == .precip }
+    public var startsAtZero: Bool { self == .pop || self == .precip || self == .solar }
 
     /// 雨量を「降っている山」だけに切り分けます。
     /// 0が続く区間は線にしません。平らな0の線は、わずかに降る予報と
@@ -475,6 +478,7 @@ public enum ChartField: String, CaseIterable, Sendable, Identifiable {
         case .ah: return row.mr
         case .pop: return row.pop
         case .precip: return row.precip
+        case .solar: return row.solar
         }
     }
 }

@@ -153,12 +153,16 @@ public struct HourlyRow: Equatable, Sendable, Identifiable {
     public var pop: Double?
     /// 雨量 [mm/h]
     public var precip: Double?
+    /// 全天日射量 [W/m²]。水平面が1時間に受けた日射の平均。
+    /// 気象庁のアメダスは日照時間しか測っていないため、実況では入りません。
+    public var solar: Double?
 
     public var id: Date { time }
 
     public init(time: Date, temp: Double? = nil, rh: Double? = nil,
                 vh: Double? = nil, mr: Double? = nil,
-                pop: Double? = nil, precip: Double? = nil) {
+                pop: Double? = nil, precip: Double? = nil,
+                solar: Double? = nil) {
         self.time = time
         self.temp = temp
         self.rh = rh
@@ -166,18 +170,21 @@ public struct HourlyRow: Equatable, Sendable, Identifiable {
         self.mr = mr
         self.pop = pop
         self.precip = precip
+        self.solar = solar
     }
 
     /// 気温と湿度がそろっていれば絶対湿度も入れて作ります
     public static func make(time: Date, temp: Double?, rh: Double?,
                             pressure: Double? = nil, pop: Double? = nil,
-                            precip: Double? = nil) -> HourlyRow? {
-        var row = HourlyRow(time: time, temp: temp, rh: rh, pop: pop, precip: precip)
+                            precip: Double? = nil, solar: Double? = nil) -> HourlyRow? {
+        var row = HourlyRow(time: time, temp: temp, rh: rh, pop: pop,
+                            precip: precip, solar: solar)
         if let t = temp, let h = rh {
             row.vh = Psychrometrics.volumetricHumidity(t, h)
             row.mr = Psychrometrics.mixingRatio(t, h, pressure: pressure)
         }
-        if row.temp == nil && row.rh == nil && row.pop == nil && row.precip == nil { return nil }
+        if row.temp == nil && row.rh == nil && row.pop == nil
+            && row.precip == nil && row.solar == nil { return nil }
         return row
     }
 }

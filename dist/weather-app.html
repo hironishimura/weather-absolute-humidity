@@ -460,12 +460,12 @@ table{ border-collapse:collapse; width:100%; font-size:.8125rem; }
       <h2>時系列（各社を重ねて表示）</h2>
       <div class="seg" role="group" aria-label="表示する範囲">
         <button type="button" class="seg__btn" data-days="1">1日</button>
-        <button type="button" class="seg__btn is-on" data-days="2">2日</button>
-        <button type="button" class="seg__btn" data-days="3">3日</button>
+        <button type="button" class="seg__btn" data-days="2">2日</button>
+        <button type="button" class="seg__btn is-on" data-days="3">3日</button>
         <button type="button" class="seg__btn" data-days="7">7日</button>
       </div>
     </div>
-    <p class="lead">直近1時間の実況と、これからの予報をひとつの時間軸に並べています。縦の点線が現在時刻です。気象庁だけは時間ごとの気温予報を出していないため、気温のグラフでは、発表されている朝の最低（5時ごろ）と日中の最高（14時ごろ）を結んだ破線にしています。丸がその発表値で、途中は目安です。時間ごとの気象庁の予報を見たいときは、同じ気象庁の数値予報「気象庁 MSM/GSM」をご覧ください。雨量は気象庁が前1時間の実測、ほかは予報です。Yahoo!天気は3時間ごとの合計で出しているため、1時間あたりに割って並べています。小さな丸が実際の値のある時刻です。ECMWFに降水確率はありません。</p>
+    <p class="lead">直近1時間の実況と、これからの予報をひとつの時間軸に並べています。縦の点線が現在時刻です。気象庁だけは時間ごとの気温予報を出していないため、気温のグラフでは、発表されている朝の最低（5時ごろ）と日中の最高（14時ごろ）を結んだ破線にしています。丸がその発表値で、途中は目安です。時間ごとの気象庁の予報を見たいときは、同じ気象庁の数値予報「気象庁 MSM/GSM」をご覧ください。雨量は気象庁が前1時間の実測、ほかは予報です。Yahoo!天気は3時間ごとの合計で出しているため、1時間あたりに割って並べています。小さな丸が実際の値のある時刻です。ECMWFに降水確率はありません。日射量は水平面が1時間に受けた日射の平均［W/m²］で、数値予報の2社ぶんです。気象庁のアメダスは日照時間しか測っていないため、日射量に実況の線はありません。</p>
     <div id="legend" class="legend"></div>
     <details class="colors">
       <summary>色を変える</summary>
@@ -980,7 +980,7 @@ var state = {
   overview: '',
   officeName: '',
   status: [],
-  chartDays: 2,
+  chartDays: 3,   /* 最初に出す日数。index.html の is-on と合わせること */
   surface: 10,
   accuracy: null,     /* 降水確率の当たり具合（accuracy.json） */
   colors: {}          /* 提供元ごとの色（変えたものだけ） */
@@ -1297,7 +1297,7 @@ function loadModel(place, key, models) {
   function url(withModel) {
     var q = '?latitude=' + place.lat.toFixed(4) +
       '&longitude=' + place.lon.toFixed(4) +
-      '&hourly=temperature_2m,relative_humidity_2m,surface_pressure,precipitation' +
+      '&hourly=temperature_2m,relative_humidity_2m,surface_pressure,precipitation,shortwave_radiation' +
       '&current=temperature_2m,relative_humidity_2m,surface_pressure' +
       '&timezone=Asia%2FTokyo&forecast_days=10&past_days=1';
     return OPEN_METEO + q + (withModel ? '&models=' + models : '');
@@ -1336,6 +1336,9 @@ function loadModel(place, key, models) {
           var p = h.surface_pressure ? h.surface_pressure[i] : null;
           var pop = pops[h.time[i]];
           var mm = h.precipitation ? h.precipitation[i] : null;
+          /* 全天日射量［W/m²］。水平面が1時間に受けた日射の平均です。
+             気象庁のアメダスは日照時間しか測っていないため、実況はありません。 */
+          var sr = h.shortwave_radiation ? h.shortwave_radiation[i] : null;
           if (!isNum(t) || !isNum(rh)) { continue; }
           rows.push({
             time: new Date(h.time[i] + ':00+09:00'),
@@ -1344,7 +1347,8 @@ function loadModel(place, key, models) {
             vh: volumetricHumidity(t, rh),
             mr: mixingRatio(t, rh, isNum(p) ? p : undefined),
             pop: isNum(pop) ? pop : undefined,
-            precip: isNum(mm) ? mm : undefined
+            precip: isNum(mm) ? mm : undefined,
+            solar: isNum(sr) ? sr : undefined
           });
         }
       }
@@ -2195,7 +2199,9 @@ function renderChart() {
     { title: '絶対湿度', unit: 'g/kg(DA)', key: 'mr', digits: 1 },
     { title: '降水確率', unit: '%', key: 'pop', digits: 0, range: [0, 100] },
     { title: '雨量', unit: 'mm/h', key: 'precip', digits: 1, dots: true, fromZero: true,
-      emptyText: 'この期間、雨の予報はありません' }
+      emptyText: 'この期間、雨の予報はありません' },
+    { title: '日射量', unit: 'W/m²', key: 'solar', digits: 0, fromZero: true,
+      emptyText: '日射量を出せる提供元がありません' }
   ].forEach(function (c) {
     var hadValues = false;
     var series = [];
@@ -2875,7 +2881,7 @@ function init() {
       Array.prototype.forEach.call(document.querySelectorAll('.seg__btn'), function (o) {
         o.classList.toggle('is-on', o === b);
       });
-      state.chartDays = parseInt(b.getAttribute('data-days'), 10) || 2;
+      state.chartDays = parseInt(b.getAttribute('data-days'), 10) || 3;
       renderChart();
     });
   });
