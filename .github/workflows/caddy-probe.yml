@@ -13,18 +13,35 @@ on:
   workflow_dispatch:
 
 jobs:
-  caddy:
+  check:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
+      # Caddy が要らない確認を先に済ませます。
+      # 取りに行く段でつまずいても、こちらの結果は分かるようにするためです。
+      - name: 控えの残し方を確かめる
+        run: bash scripts/probe_backup.sh
+
       - name: Caddy を入れる
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          url=$(curl -fsSL https://api.github.com/repos/caddyserver/caddy/releases/latest \
-                | grep -o 'https://[^"]*_linux_amd64\.tar\.gz' | head -1)
+          set -euo pipefail
+          # 認証なしで叩くと 403（レート制限）で空が返ることがあるため、
+          # ワークフローの手形を付けます。それでも駄目なときは、
+          # 確認済みの版を決め打ちで取りにいきます。
+          url=$(curl -fsSL -H "Authorization: Bearer $GH_TOKEN" \
+                  https://api.github.com/repos/caddyserver/caddy/releases/latest \
+                | grep -o 'https://[^"]*_linux_amd64\.tar\.gz' | head -1 || true)
+          if [ -z "$url" ]; then
+            echo "::warning::最新版を調べられませんでした。確認済みの v2.11.4 を使います。"
+            url=https://github.com/caddyserver/caddy/releases/download/v2.11.4/caddy_2.11.4_linux_amd64.tar.gz
+          fi
           echo "取ってくる $url"
           curl -fsSL "$url" | tar xz caddy
           sudo mv caddy /usr/local/bin/
+          caddy version
+
       - name: 公開設定と合言葉を確かめる
         run: bash scripts/probe_caddy.sh
-      - name: 控えの残し方を確かめる
-        run: bash scripts/probe_backup.sh
