@@ -23,4 +23,24 @@ weather.shome.co.jp {
 	# CSS・JavaScript は中身が変わると ?v=… も変わるので長めに持たせます
 	@assets path /assets/*
 	header @assets Cache-Control "public, max-age=604800"
+
+	# 画面に合言葉をかけます。
+	#
+	# /data/ だけは外してあります。iPhone・iPad・Mac のアプリが
+	# 認証を持たずにここを読みにくるためです。閉じるとアプリが 401 になり、
+	# Yahoo!天気・ウェザーニュース・降水確率の当たり具合が出なくなります。
+	#
+	# 合言葉そのものはこのリポジトリに置きません。公開設定なので、
+	# bcrypt のハッシュでも総当たりの的になります。VPS の中だけに置き、
+	# ここからは読み込むだけにします。
+	#
+	#   決める・変える: bash /opt/weather-ah/deploy/set_password.sh
+	#   やめる        : bash /opt/weather-ah/deploy/set_password.sh --off
+	#
+	# 1つのファイルではなくフォルダを指定しています。1ファイル指定だと
+	# それが無くなった時点で Caddy が設定を読めなくなり、同じ Caddy に
+	# 相乗りしている土地サーチまで巻き添えになるためです。
+	# フォルダ指定なら、中身が無いときは「何も読まない」で済みます（検証済み）。
+	@locked not path /data/*
+	import /etc/caddy/weather-auth.d/*.conf
 }

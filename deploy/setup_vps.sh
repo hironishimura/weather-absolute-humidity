@@ -76,6 +76,12 @@ if ! command -v caddy >/dev/null; then
   exit 1
 fi
 mkdir -p /etc/caddy/conf.d
+# 合言葉の置き場。weather.caddy がこのフォルダを読み込みます。
+# 中が空のあいだは鍵なしで動きます。決めるとき:
+#   bash $APP_DIR/deploy/set_password.sh
+mkdir -p /etc/caddy/weather-auth.d
+chmod 750 /etc/caddy/weather-auth.d
+chgrp caddy /etc/caddy/weather-auth.d 2>/dev/null || true
 install -m 644 "$APP_DIR/deploy/weather.caddy" /etc/caddy/conf.d/weather.caddy
 if ! grep -q '/etc/caddy/conf.d' /etc/caddy/Caddyfile; then
   printf '\n# 各アプリの公開設定はここから読みます\nimport /etc/caddy/conf.d/*.caddy\n' \

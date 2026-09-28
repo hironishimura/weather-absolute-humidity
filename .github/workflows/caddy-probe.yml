@@ -1,0 +1,28 @@
+name: 公開設定と合言葉の確認
+
+# deploy/ を直したときに走ります。ここを壊すと、同じ Caddy に相乗りしている
+# 土地サーチまで巻き添えになるため、サーバーに触る前に落とします。
+
+on:
+  push:
+    branches: [main, probe]
+    paths:
+      - 'deploy/**'
+      - 'scripts/probe_caddy.sh'
+      - '.github/workflows/caddy-probe.yml'
+  workflow_dispatch:
+
+jobs:
+  caddy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Caddy を入れる
+        run: |
+          url=$(curl -fsSL https://api.github.com/repos/caddyserver/caddy/releases/latest \
+                | grep -o 'https://[^"]*_linux_amd64\.tar\.gz' | head -1)
+          echo "取ってくる $url"
+          curl -fsSL "$url" | tar xz caddy
+          sudo mv caddy /usr/local/bin/
+      - name: 合言葉まわりを通しで確かめる
+        run: bash scripts/probe_caddy.sh
