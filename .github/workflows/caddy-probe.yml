@@ -1,4 +1,4 @@
-name: 公開設定と合言葉の確認
+name: 配布まわりの確認
 
 # deploy/ を直したときに走ります。ここを壊すと、同じ Caddy に相乗りしている
 # 土地サーチまで巻き添えになるため、サーバーに触る前に落とします。
@@ -8,7 +8,7 @@ on:
     branches: [main, probe]
     paths:
       - 'deploy/**'
-      - 'scripts/probe_caddy.sh'
+      - 'scripts/probe_*.sh'
       - '.github/workflows/caddy-probe.yml'
   workflow_dispatch:
 
@@ -24,5 +24,7 @@ jobs:
           echo "取ってくる $url"
           curl -fsSL "$url" | tar xz caddy
           sudo mv caddy /usr/local/bin/
-      - name: 合言葉まわりを通しで確かめる
+      - name: 公開設定と合言葉を確かめる
         run: bash scripts/probe_caddy.sh
+      - name: 控えの残し方を確かめる
+        run: bash scripts/probe_backup.sh

@@ -10,3 +10,6 @@ DerivedData/
 
 # swift test が作るもの（apple/WeatherCore/.build）
 .build/
+
+# VPS から取り寄せた控え（deploy/fetch_data.sh）
+backup/

@@ -23,6 +23,10 @@ ExecStart=-/opt/weather-ah/venv/bin/python3 scripts/collect_browser.py
 # 3. 降水確率の当たり具合を数える(同じく、こけても止めない)
 ExecStart=-/opt/weather-ah/venv/bin/python3 scripts/verify.py
 
+# 4. 取り込んだ値の控えを日ごとに残す(同じく、こけても止めない)
+#    history.json は過去の予報の書きためで、あとから取り寄せられない。
+ExecStart=-/bin/bash /opt/weather-ah/deploy/backup_data.sh
+
 TimeoutStartSec=20min
 
 # 書き込むのは自分の置き場だけ

@@ -37,6 +37,7 @@ if [ "$SRC_DIR" != "$APP_DIR" ]; then
     --exclude '.git' --exclude '.github' --exclude '__pycache__' --exclude '*.pyc' \
     --exclude '.DS_Store' --exclude 'apple' --exclude 'dist' --exclude 'test' \
     --exclude 'docs/data' --exclude 'venv' --exclude '.playwright' \
+    --exclude 'backup' \
     "$SRC_DIR"/ "$APP_DIR"/
 fi
 mkdir -p "$APP_DIR/docs/data"

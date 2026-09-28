@@ -159,6 +159,39 @@ ssh root@153.115.38.1 'journalctl -u weather-collect -n 50 --no-pager'
 `docs/data/*.json`（取り込んだ値・予報の書きため・当たり具合）は**サーバ側のものが正**で、
 `update_vps.sh` は上書きしません。手元のものは開発用の控えです。
 
+### 取り込んだ値の控え
+
+`docs/data/history.json` は降水確率の当たり具合を数えるための書きためです。
+**過去の予報はあとから取り寄せられません。** 消えると、数字がそろうまで
+また1週間ほどかかります。そのため二段構えにしています。
+
+**VPS の中**  取り込みのたびに日ごとの控えを残します（既定で30日ぶん）。
+
+```
+/opt/weather-ah/backup/YYYY-MM-DD/*.json
+```
+
+JSONとして読めるものだけ控えます。壊れたものを控えに混ぜると、戻すときに
+どれが無事なのか分からなくなるためです。
+
+**手元（Mac）**  ときどきこれを走らせて、VPS の外にも置いておきます。
+
+```
+bash deploy/fetch_data.sh
+```
+
+`backup/vps/` に入ります（git には入れません）。VPS を作り直したり
+壊したりしたときは、ここから `docs/data/` へ戻してください。
+
+```
+scp backup/vps/data/history.json root@153.115.38.1:/opt/weather-ah/docs/data/
+ssh root@153.115.38.1 'chown weather:weather /opt/weather-ah/docs/data/history.json \
+  && systemctl start weather-collect.service'
+```
+
+`update_vps.sh` は `backup` を送りません。送ると `--delete` で VPS の控えが
+消えてしまうためです。
+
 ### GitHub はどうなっているか
 
 取り込みは VPS に移したので、**GitHub Actions の定期実行は止めてあります**

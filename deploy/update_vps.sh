@@ -15,11 +15,13 @@ SETUP=no
 [ "${1:-}" = "--setup" ] && SETUP=yes
 
 # apple/ は Mac・iPhone 用、dist/ は1ファイル版、test/ は手元の確認用なので送りません。
-# docs/data は VPS 側が書くので、こちらから上書きしません。
+# docs/data と backup は VPS 側が書くので、こちらから上書きしません。
+# backup を外さないと、--delete で配るたびに控えが消えます。
 rsync -az --delete \
   --exclude '.git' --exclude '.github' --exclude '__pycache__' --exclude '*.pyc' \
   --exclude '.DS_Store' --exclude 'apple' --exclude 'dist' --exclude 'test' \
   --exclude 'docs/data' --exclude 'venv' --exclude '.playwright' \
+  --exclude 'backup' \
   ./ "$HOST":"$APP_DIR"/
 
 if [ "$SETUP" = yes ]; then
