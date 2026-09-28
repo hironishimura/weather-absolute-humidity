@@ -37,8 +37,10 @@ weather.shome.co.jp {
 	#   決める・変える: bash /opt/weather-ah/deploy/set_password.sh
 	#   やめる        : bash /opt/weather-ah/deploy/set_password.sh --off
 	#
-	# 読み込む先が注釈だけのあいだは鍵なしで動きます（検証済み）。
-	# 決め忘れで画面が開かなくなる事故を避けるためです。
+	# 1つのファイルではなくフォルダを指定しています。1ファイル指定だと
+	# それが無くなった時点で Caddy が設定を読めなくなり、同じ Caddy に
+	# 相乗りしている土地サーチまで巻き添えになるためです。
+	# フォルダ指定なら、中身が無いときは「何も読まない」で済みます（検証済み）。
 	@locked not path /data/*
-	import /etc/caddy/weather-auth.conf
+	import /etc/caddy/weather-auth.d/*.conf
 }

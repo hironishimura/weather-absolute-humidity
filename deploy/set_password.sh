@@ -2,42 +2,48 @@
 # =========================================================
 # 画面を開くときの合言葉を決める・変える・やめる（VPS 上で root で実行）
 #
-#   bash /opt/weather-ah/deploy/set_password.sh         決める・変える
-#   bash /opt/weather-ah/deploy/set_password.sh --off    やめる（誰でも見られる状態へ）
+#   bash /opt/weather-ah/deploy/set_password.sh          決める・変える
+#   bash /opt/weather-ah/deploy/set_password.sh --off     やめる（誰でも見られる状態へ）
 #
 # 合言葉はこのリポジトリに入れません。公開設定なので、bcrypt の
-# ハッシュでも置きたくないためです。下のファイルにだけ書きます。
+# ハッシュでも総当たりの的になるためです。VPS の中だけに置きます。
 #
-#   /etc/caddy/weather-auth.conf
+#   /etc/caddy/weather-auth.d/auth.conf
 #
-# /data/ には鍵をかけません。iPhone・iPad・Mac のアプリが認証を
-# 持たずに読みにくるためです（deploy/weather.caddy を参照）。
+# フォルダ指定で読ませているので、この中が空のあいだは鍵なしで動きます。
+# 決め忘れで画面が開かなくなることはありません。
+#
+# /data/ には鍵をかけません。iPhone・iPad・Mac のアプリが認証を持たずに
+# 読みにくるためです（deploy/weather.caddy を参照）。
 # =========================================================
 set -euo pipefail
 
-AUTH=${WEATHER_AUTH_FILE:-/etc/caddy/weather-auth.conf}
+AUTH_DIR=${WEATHER_AUTH_DIR:-/etc/caddy/weather-auth.d}
+AUTH="$AUTH_DIR/auth.conf"
 CADDYFILE=${WEATHER_CADDYFILE:-/etc/caddy/Caddyfile}
 RELOAD=${WEATHER_RELOAD:-yes}
 
 command -v caddy >/dev/null || { echo "Caddy が見つかりません" >&2; exit 1; }
+mkdir -p "$AUTH_DIR"
 
 # 壊れた設定を残さないよう、書き換える前を控えておきます
 BACKUP=$(mktemp)
-[ -f "$AUTH" ] && cp "$AUTH" "$BACKUP"
+HAD=no
+if [ -f "$AUTH" ]; then cp "$AUTH" "$BACKUP"; HAD=yes; fi
 
 restore () {
   echo "  設定が通らなかったので、元に戻しました。" >&2
-  if [ -s "$BACKUP" ]; then cp "$BACKUP" "$AUTH"; else rm -f "$AUTH"; fi
+  if [ "$HAD" = yes ]; then cp "$BACKUP" "$AUTH"; else rm -f "$AUTH"; fi
   rm -f "$BACKUP"
   exit 1
 }
 
 if [ "${1:-}" = "--off" ]; then
-  printf '# 合言葉はかけていません（set_password.sh で決められます）\n' > "$AUTH"
+  rm -f "$AUTH"
   echo "合言葉をやめました。誰でも見られる状態です。"
 else
   # いまの利用者名を控えておき、そのまま Enter で使えるようにします
-  WAS=$(grep -oE '^\s*[A-Za-z0-9._-]+\s+\$2[aby]\$' "$AUTH" 2>/dev/null \
+  WAS=$(grep -oE '^[[:space:]]*[A-Za-z0-9._-]+[[:space:]]+\$2[aby]\$' "$AUTH" 2>/dev/null \
         | head -1 | awk '{print $1}' || true)
   DEFAULT=${WAS:-hiro}
 
@@ -60,10 +66,9 @@ else
   HASH=$(caddy hash-password --plaintext "$PW")
   umask 077
   printf 'basic_auth @locked {\n\t%s %s\n}\n' "$USER_NAME" "$HASH" > "$AUTH"
+  chmod 640 "$AUTH"
+  chgrp caddy "$AUTH" 2>/dev/null || true
 fi
-
-chmod 640 "$AUTH"
-chgrp caddy "$AUTH" 2>/dev/null || true
 
 caddy validate --config "$CADDYFILE" >/dev/null 2>&1 || restore
 rm -f "$BACKUP"
