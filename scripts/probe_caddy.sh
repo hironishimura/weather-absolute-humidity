@@ -10,12 +10,16 @@ say () { printf '%-44s ' "$1"; }
 pass () { echo "通った"; }
 fail () { echo "★ 通らない"; ng=1; [ -n "${1-}" ] && sed 's/^/      /' "$1" | tail -4; }
 
-# 本番の設定をそのまま使う。証明書を取りに行かせたくないので宛先だけ差し替える。
-sed 's|^weather\.shome\.co\.jp {|http://localhost:8080 {|' deploy/weather.caddy \
-  > $T/conf.d/weather.caddy
-printf 'import %s/conf.d/*.caddy\n' "$T" > $T/Caddyfile
-
+# 本番の設定をそのまま使う。証明書を取りに行かせたくないので宛先だけ差し替え、
+# 合言葉の置き場も、ここで作れる場所へ向け直す。
 export WEATHER_AUTH_FILE=$T/weather-auth.conf
+sed -e 's|^weather\.shome\.co\.jp {|http://localhost:8080 {|' \
+    -e "s|/etc/caddy/weather-auth\.conf|$WEATHER_AUTH_FILE|" \
+    deploy/weather.caddy > $T/conf.d/weather.caddy
+printf 'import %s/conf.d/*.caddy\n' "$T" > $T/Caddyfile
+grep -q "$WEATHER_AUTH_FILE" $T/conf.d/weather.caddy \
+  || { echo "読み込み先の差し替えに失敗しました" >&2; exit 1; }
+
 export WEATHER_CADDYFILE=$T/Caddyfile
 export WEATHER_RELOAD=no
 
@@ -69,6 +73,34 @@ if WEATHER_PASSWORD='tochigi-2026!' bash deploy/set_password.sh </dev/null >$T/o
 else
   fail $T/o
 fi
+
+# ---- 読み込み先が消えたときどうなるか ----
+# 土地サーチと同じ Caddyfile なので、ここで全体が読めなくなると困る。
+say "⑫ 読み込み先が消えると設定が読めない（確認）"
+mv "$WEATHER_AUTH_FILE" $T/away
+if caddy validate --config $T/Caddyfile >$T/o 2>&1; then
+  echo "消えても通った（そのほうが安全）"
+else
+  echo "やはり通らない → 消さない工夫が要る"
+fi
+mv $T/away "$WEATHER_AUTH_FILE"
+
+say "⑬ 見つからなくても平気な書き方（*.conf）"
+mkdir -p $T/authdir
+sed "s|import $WEATHER_AUTH_FILE|import $T/authdir/*.conf|" $T/conf.d/weather.caddy \
+  > $T/conf.d2.caddy
+mkdir -p $T/c2 && cp $T/conf.d2.caddy $T/c2/weather.caddy
+printf 'import %s/c2/*.caddy\n' "$T" > $T/Caddyfile2
+if caddy validate --config $T/Caddyfile2 >$T/o 2>&1; then
+  pass
+else
+  fail $T/o
+fi
+
+say "⑭ そこに合言葉を置いても通る"
+printf 'basic_auth @locked {\n\thiro %s\n}\n' \
+  "$(caddy hash-password --plaintext 'tochigi-2026!')" > $T/authdir/auth.conf
+caddy validate --config $T/Caddyfile2 >$T/o 2>&1 && pass || fail $T/o
 
 echo
 echo "できあがった合言葉ファイル:"
