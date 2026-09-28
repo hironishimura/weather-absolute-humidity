@@ -27,8 +27,20 @@ if [ "$SETUP" = yes ]; then
   rsync -az docs/data/ "$HOST":"$APP_DIR"/docs/data/
   ssh "$HOST" "bash $APP_DIR/deploy/setup_vps.sh"
 else
-  ssh "$HOST" "chown -R weather:weather $APP_DIR \
-    && chmod 755 $APP_DIR $APP_DIR/docs \
-    && systemctl reload caddy \
-    && systemctl is-active weather-collect.timer"
+  # 公開設定も毎回入れ直します。これをしないと deploy/weather.caddy を
+  # 直しても VPS 側は古いままで、直したつもりが反映されません。
+  # 合言葉のファイル(/etc/caddy/weather-auth.conf)は VPS のものが正なので触りません。
+  ssh "$HOST" "set -e
+    chown -R weather:weather $APP_DIR
+    chmod 755 $APP_DIR $APP_DIR/docs
+    [ -f /etc/caddy/weather-auth.conf ] || {
+      printf '# 合言葉はかけていません（set_password.sh で決められます）\n' \
+        > /etc/caddy/weather-auth.conf
+      chmod 640 /etc/caddy/weather-auth.conf
+      chgrp caddy /etc/caddy/weather-auth.conf 2>/dev/null || true
+    }
+    install -m 644 $APP_DIR/deploy/weather.caddy /etc/caddy/conf.d/weather.caddy
+    caddy validate --config /etc/caddy/Caddyfile >/dev/null
+    systemctl reload caddy
+    systemctl is-active weather-collect.timer"
 fi
